@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "anatomy-rescan",
+      "name": "Full anatomy rescan",
+      "schedule": "0 */6 * * *",
+      "description": "Re-scans project filesystem and reconciles anatomy.md",
+      "action": { "type": "scan_project" },
+      "retry": {
+        "max_attempts": 3,
+        "backoff": "exponential",
+        "base_delay_seconds": 30
+      },
+      "failsafe": {
+        "on_failure": "log_and_continue",
+        "alert_after_consecutive_failures": 2,
+        "dead_letter": true
+      },
+      "enabled": true
+    },
+    {
+      "id": "memory-consolidation",
+      "name": "Consolidate old memory",
+      "schedule": "0 2 * * *",
+      "description": "Compress memory.md entries older than 7 days",
+      "action": {
+        "type": "consolidate_memory",
+        "params": { "older_than_days": 7 }
+      },
+      "retry": {
+        "max_attempts": 2,
+        "backoff": "exponential",
+        "base_delay_seconds": 60
+      },
+      "failsafe": {
+        "on_failure": "skip_and_retry_next_cycle",
+        "dead_letter": false
+      },
+      "enabled": true
+    },
+    {
+      "id": "hippocampus-consolidation",
+      "name": "Hippocampus consolidation",
+      "schedule": "0 3 * * *",
+      "description": "Transfer short-term hippocampus events to long-term neocortex memory",
+      "action": {
+        "type": "consolidate_hippocampus",
+        "params": { "max_to_promote": 50 }
+      },
+      "retry": {
+        "max_attempts": 2,
+        "backoff": "exponential",
+        "base_delay_seconds": 60
+      },
+      "failsafe": {
+        "on_failure": "skip_and_retry_next_cycle",
+        "dead_letter": false
+      },
+      "enabled": true
+    },
+    {
+      "id": "token-audit",
+      "name": "Token audit report",
+      "schedule": "0 0 * * 1",
+      "description": "Weekly waste pattern detection",
+      "action": { "type": "generate_token_report" },
+      "retry": {
+        "max_attempts": 2,
+        "backoff": "linear",
+        "base_delay_seconds": 60
+      },
+      "failsafe": { "on_failure": "log_and_continue", "dead_letter": true },
+      "enabled": true
+    },
+    {
+      "id": "cerebrum-reflection",
+      "name": "Cerebrum reflection",
+      "schedule": "0 3 * * 0",
+      "description": "Weekly AI review of cerebrum.md — prune stale entries, consolidate duplicates",
+      "action": {
+        "type": "ai_task",
+        "params": {
+          "prompt": "Review this cerebrum.md. Remove duplicate preferences (keep newer). Remove Do-Not-Repeat entries older than 90 days if no longer relevant. Consolidate Key Learnings that overlap. Keep the file under 2000 tokens. Return the cleaned file content only.",
+          "context_files": [".wolf/cerebrum.md"]
+        }
+      },
+      "retry": {
+        "max_attempts": 1,
+        "backoff": "none",
+        "base_delay_seconds": 0
+      },
+      "failsafe": { "on_failure": "log_and_continue", "dead_letter": false },
+      "enabled": true
+    },
+    {
+      "id": "project-suggestions",
+      "name": "AI suggestions",
+      "schedule": "0 4 * * 1",
+      "description": "Weekly AI analysis with project improvement suggestions",
+      "action": {
+        "type": "ai_task",
+        "params": {
+          "prompt": "Based on the recent memory entries and current project structure, provide: 1) Key achievements this week, 2) Code improvements to consider, 3) Logical next tasks, 4) Technical debt or risks. Be specific and actionable. Return as JSON: {achievements:[], improvements:[], next_tasks:[], risks:[]}",
+          "context_files": [".wolf/memory.md", ".wolf/anatomy.md"]
+        }
+      },
+      "retry": {
+        "max_attempts": 1,
+        "backoff": "none",
+        "base_delay_seconds": 0
+      },
+      "failsafe": { "on_failure": "log_and_continue", "dead_letter": false },
+      "enabled": true
+    },
+    {
+      "id": "doc-module-dispatch",
+      "name": "Document next uncovered Godot module",
+      "schedule": "*/5 * * * *",
+      "description": "State-machine dispatcher: document one uncovered engine module per tick, tracking progress in docs/INDEX.md",
+      "action": {
+        "type": "ai_task",
+        "params": {
+          "prompt": "你是 Godot 引擎源码的文档化 agent，每次运行只文档化一个模块。步骤：1) 读 docs/INDEX.md 和 docs/DOC_SPEC.md；2) 在 INDEX.md 找到第一个 `- [ ]` 项，记下它的层与模块名，把该项 `[ ]` 改成 `[~]` 认领；3) 用 shell（ls / find / grep）摸清该模块源目录结构与入口（SCsub 编译哪些文件、register_types.cpp/h 注册哪些类）；4) 只读关键 .h/.cpp 公共接口，不逐行读源码；5) 严格按 DOC_SPEC.md 的 8 段模板写 docs/<层>/<模块名>.md，全中文、教学式、结论先行；6) 写完后把 INDEX.md 里该项 `[~]` 改成 `[x]`；7) 若 INDEX.md 已无任何 `- [ ]` 项，直接输出 ALL_COVERED 并停止，不要写任何文件。纪律：不编造类名/API（写前 grep 确认符号真实存在），不碰 thirdparty/，一次只认领一个模块。",
+          "context_files": ["docs/INDEX.md", "docs/DOC_SPEC.md"]
+        }
+      },
+      "retry": {
+        "max_attempts": 1,
+        "backoff": "none",
+        "base_delay_seconds": 0
+      },
+      "failsafe": { "on_failure": "log_and_continue", "dead_letter": true },
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "schema_version": 1,
+  "project_root": "D:\\GitRepo-My\\godot",
+  "created_at": "2026-08-28T15:54:07.942Z",
+  "last_updated": "2026-08-28T15:54:07.942Z",
+  "buffer": [],
+  "stats": {
+    "total_events": 0,
+    "reward_count": 0,
+    "penalty_count": 0,
+    "trauma_count": 0,
+    "neutral_count": 0,
+    "recurrences": 0,
+    "negative_writes": 0,
+    "oldest_event": null,
+    "newest_event": null
+  },
+  "size_bytes": 0,
+  "max_size_bytes": 5000000,
+  "retention_days": 7,
+  "max_buffer_size": 500
+}
