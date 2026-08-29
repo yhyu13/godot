@@ -396,3 +396,26 @@ $RECYCLE.BIN/
 *.msp
 *.lnk
 *.generated.props
+
+#############################
+### OpenWolf runtime state ###
+#############################
+
+# Per-session runtime state: machine paths, timestamps, token counts.
+# Human-authored handoff docs (.md) and tool source (.js) stay tracked.
+.wolf/_scan-state.json
+.wolf/anatomy-index.json
+.wolf/buglog.json
+.wolf/claim-candidates.json
+.wolf/claim-index.json
+.wolf/claims.json
+.wolf/cron-manifest.json
+.wolf/cron-state.json
+.wolf/cue-index.json
+.wolf/hippocampus.json
+.wolf/neocortex.json
+.wolf/specs-state.json
+.wolf/suggestions.json
+.wolf/token-ledger.json
+.wolf/hippocampus/trajectory.js
+.wolf/hooks/_session.json
