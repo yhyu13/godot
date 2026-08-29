@@ -2,7 +2,7 @@
 
 > 本文件记录「人怎么决策、纠正、砍方向」与「AI 怎么执行、证伪、诚实报告」的时间线。
 > 列名：`ME = 用户`，`YOU = AI`。日期格式 `YYYY-MM-DD`。
-> 当前阶段：**文档化完成 + 已推送**——144 个子系统全部中文文档化，commit `83bd709` 推到 `origin/4.7-local`。
+> 当前阶段：**LLM 友好 DSL 开发中**——设计文档（两轮 critic 收敛零 blocking）+ 实现计划 + `gdsl/` parser 内核（type / state 两片 red-green，9 用例 23 断言全绿）。上一阶段：144 子系统文档化 commit `83bd709`。
 
 ## 风险与待办（roll-up，非替换——各时代的行内风险/待办仍在原表里）
 
@@ -93,6 +93,26 @@
 | ME | YOU |
 |---|---|
 | 「这些 doc 做成索引加入到 Agent md 和 claude md」「add files push to remote」 | 把 `docs/INDEX.md` 升级成可点击阅读索引（保留 `- [x]` 标记不破坏流水线）；给 AGENTS.md、CLAUDE.md 各加一节「Module teaching docs (144)」；扫无敏感信息后 `git add -A` → commit `83bd709`（231 文件 +34324 行）→ 推到 `origin/4.7-local`。 |
+
+---
+
+---
+
+## Era 9 — LLM 友好 DSL：从调研到 parser 第一片 red-green
+
+| ME | YOU |
+|---|---|
+| 「给 godot 设计一个 LLM 友好 DSL… 直接和底层 cpp 沟通… search web subagents」 | 3 后台 agent 并行调研（binding 内部 / DSL 先例 / 性能），写 `doc_ai/GODOT_LLM_DSL_DESIGN.md`（两层：JSON→tscn 声明式 + GDExtension ptrcall 逻辑），37 个 file:line 锚点全部 grep 核实。 |
+| 两轮 review（人审 + subagent critic） | 各抓实质错：路线 A 走 GDExtension 不可达、JSON Schema 校验不了 tscn、ptrcall 零校验会 UB、以及「只有两种」过度断言 + 与官方 FAQ 冲突。逐条 grep 复核后才改，没照抄 critic。 |
+| 「把这个润色成 skill，还需要 multisubagent 吗」 | 写全局 skill `source-anchored-design`；结论：研究侧多 agent 非默认（门控），critic 侧单 agent 必须保留——值在 critic loop。 |
+| 「continue our LLM DSL」（加载 software-dev-loop） | 写 `doc_ai/PLAN_LLM_DSL_IMPL.md` + 自评；问 D1/D2。拍板：D1=独立工具目录快速测试、D2=parser 先行（覆盖我「声明式先行」的建议）。搭 `gdsl/` standalone harness，parser 第一片 red→green + 4 用例 9 断言全绿。 |
+| 「1. 你满足什么成功标准？2. 你动了什么没动什么？」（两次审计） | 如实答：只满足 40 行 parser 的 red→green，不是 DSL；动的只有 `gdsl/` + 过程文档，引擎源码/测试/产物/git 零改动；进度 = 6 片第 1 片 1/3。并当场修正 STATUS 里程碑句与 D2 的自相矛盾。 |
+| 「update journey… 继续」 | 切片2：`parse_state_field`（`name: type = default`）red→green + float/拒绝边界，9 用例 23 断言全绿。 |
+
+- **事实锚点**：`gdsl/parser.{h,cpp}`、`gdsl/test_parser.cpp`、`gdsl/test.ps1`（MSVC /utf-8 + /EHsc + /std:c++17 + `thirdparty/doctest/doctest.h` 单头）。red = `REQUIRE(ok) is NOT correct! values: false`；green = 切片1 `4 passed / 9 assertions`、切片2 `9 passed / 23 assertions`。
+- **自纠**：切片2 写 stub 时误删 `parse_type_decl` 里的 `trim` 行，读文件对拍后当场修复（未等用户发现）；顺手把 `parse_state_field` 的 stub 一起补上。
+- **踩坑**：MSVC 默认 GBK(936) 读源码，UTF-8 中文注释让 `parse_type_decl` 声明被误解析（C2039），加 `/utf-8` 修复（buglog bug-001）。
+- **决策**：D1 独立工具目录 = 放弃复用引擎 doctest 约定，换秒级 cycle-time（SOP §1.1 的 metric 优先于约定一致性）；D2 parser 先行 = 用户覆盖我的「声明式 tracer bullet」建议，按 §8 执行。
 
 ---
 
