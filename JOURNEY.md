@@ -2,7 +2,7 @@
 
 > 本文件记录「人怎么决策、纠正、砍方向」与「AI 怎么执行、证伪、诚实报告」的时间线。
 > 列名：`ME = 用户`，`YOU = AI`。日期格式 `YYYY-MM-DD`。
-> 当前阶段：**LLM 友好 DSL 开发中**——设计文档（两轮 critic 收敛零 blocking）+ 实现计划 + `gdsl/` parser 内核（type / state 两片 red-green，9 用例 23 断言全绿）。上一阶段：144 子系统文档化 commit `83bd709`。
+> 当前阶段：**LLM 友好 DSL 内核完成**——设计文档（两轮 critic 收敛零 blocking）+ 实现计划 + `gdsl/` 编译器内核（parser + 声明式 codegen + JSON/schema + typechecker + 逻辑 codegen，S1–S5 全 red-green，35 用例 125 断言全绿）。剩余：S6 引擎集成（scons + GDExtension）。上一阶段：144 子系统文档化 commit `83bd709`。
 
 ## 风险与待办（roll-up，非替换——各时代的行内风险/待办仍在原表里）
 
@@ -113,6 +113,21 @@
 - **自纠**：切片2 写 stub 时误删 `parse_type_decl` 里的 `trim` 行，读文件对拍后当场修复（未等用户发现）；顺手把 `parse_state_field` 的 stub 一起补上。
 - **踩坑**：MSVC 默认 GBK(936) 读源码，UTF-8 中文注释让 `parse_type_decl` 声明被误解析（C2039），加 `/utf-8` 修复（buglog bug-001）。
 - **决策**：D1 独立工具目录 = 放弃复用引擎 doctest 约定，换秒级 cycle-time（SOP §1.1 的 metric 优先于约定一致性）；D2 parser 先行 = 用户覆盖我的「声明式 tracer bullet」建议，按 §8 执行。
+
+---
+
+## Era 10 — DSL 内核全切片：S3 补全 + S1–S5 全部 red-green
+
+| ME | YOU |
+|---|---|
+| 「where were we in the journey towards DSL for LLM? do all parts for me」 | 定位到 parser 只完成两个单行产生式（9 用例 23 断言）；补全 S3（`parse_type_block` / `parse_rule_block` / `parse_program`），再按计划落地 S1–S5：S1 `emit_tscn`、S2 JSON→SceneSpec+schema、S4 `typecheck`、S5 `emit_c`。每片先红后绿（stub→断言红→实现→绿）。 |
+| 授权运行 MSVC harness（`test.ps1` 被 consent 门拦下，选「1 你批准」） | 把 harness 从 2 文件扩到 11 文件（parser/codegen_declarative/json/scene_json/typecheck/codegen_logic + 4 个 test_*.cpp），累计 35 用例 125 断言全绿。 |
+| （沿用 D1/D2，无新拍板） | S2 的 JSON 解析遗留问题（PLAN 自评 #3）拍板：手写最小 JSON 解析器 `gdsl/json.{h,cpp}`，内核零第三方依赖。 |
+
+- **事实锚点**：`gdsl/` 从 2 文件扩到 13 文件。累计 35 用例 / 125 断言全绿（red 证据 = `REQUIRE(ok) is NOT correct! values: REQUIRE(false)`）。
+- **切片落地**：S3 补全 parser 到完整 AST（`Program{types,rules}`）；S1 `emit_tscn` golden 逐字节；S2 `scene_from_json`（JSON→tscn 端到端 tracer bullet 通过）；S4 `typecheck` 拒绝重复类型名/未知字段类型/重复字段/未知触发类型；S5 `emit_c` 类型映射（int→int64_t、float→double、Named→指针）+ 确定性。
+- **诚实边界（S6 未做）**：环境无 scons、无内置引擎二进制；且 `emit_c` 当前只输出 struct 定义 + rule 注释，尚未生成真 GDExtension 注册/effect/ptrcall 代码——此时接引擎是接骨架。S6 需 (a) 装 scons + 全量引擎构建；(b) 先把 S5 codegen 扩到真 GDExtension 代码。
+- **踩坑**：`\uXXXX` 转义下标（读 `s[i+1+k]` 而非 `s[i+k]`）；多文件 doctest 只有一个 `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`（test_parser.cpp），其余 test 文件只 `#include "doctest.h"`。
 
 ---
 
