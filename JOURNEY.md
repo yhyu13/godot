@@ -2,7 +2,7 @@
 
 > 本文件记录「人怎么决策、纠正、砍方向」与「AI 怎么执行、证伪、诚实报告」的时间线。
 > 列名：`ME = 用户`，`YOU = AI`。日期格式 `YYYY-MM-DD`。
-> 当前阶段：**引导期**——仓库刚 fork + OpenWolf 刚落地，尚未进入真实引擎开发。历史很薄，如实记录，不灌水。
+> 当前阶段：**文档化完成 + 已推送**——144 个子系统全部中文文档化，commit `83bd709` 推到 `origin/4.7-local`。
 
 ## 风险与待办（roll-up，非替换——各时代的行内风险/待办仍在原表里）
 
@@ -11,6 +11,7 @@
 - **[Era 4·OpenWolf] 记忆库全空**：`.wolf/{cerebrum,memory,STATUS}.md`、`buglog.json`、hippocampus/token-ledger 均 15:54:07 初始化为零。TODO：真实开发开始后按 OPENWOLF.md 协议回填，否则 OpenWolf 形同虚设。
 - **[Era 4·OpenWolf] anatomy.md 对 C++ 文件价值低**：`file_count=513, hits=0`，多数描述只是版权首行（如把 `CLAUDE.md` 标成「OpenWolf」）。RISK：agent 依赖 anatomy 描述会读到无意义文本。
 - **[Era 2-3·AGENTS] 两份指令文件会漂移**：`AGENTS.md`（紧凑）与 `CLAUDE.md`（更详）内容重叠（构建/测试/架构/贡献约定）。TODO：后续改动若只更新一份，另一份会过期。
+- **[Era 8·push] `.wolf/` 运行时状态文件被提交进 git**：`hippocampus.json`/`token-ledger.json`/`_scan-state.json` 等含机器绝对路径 `D:\GitRepo-My\godot`，会随每次会话变化产生提交噪声。待确认：是否给 `.gitignore` 加规则排除。
 
 ---
 
@@ -74,6 +75,27 @@
 
 ---
 
+## Era 7 — 文档化流水线：144 模块，1 小时 22 分钟跑完
+
+| ME | YOU |
+|---|---|
+| 「start cron sub agents every 5 mins to doc every single module in godot… use writing skill to write docs in Chinese」；四问后拍板：整个引擎 144 子系统、按层分目录、教学式 edu-doc-writer、调度写进 OpenWolf cron。 | 建 `docs/INDEX.md`（144 条目三态追踪）+ `docs/DOC_SPEC.md`（8 段模板 + 6 纪律）；注册 cron `doc-module-dispatch`；发现 OpenWolf 守护进程没在跑，改用 `task` 后台子 agent 亲自当 dispatcher，14 批并发派发，144 模块全部落盘。 |
+
+- **耗时**：16:56:49 任务下达 → 18:18:51 最后一个模块（`platform/windows`）完成 = **约 1 小时 22 分钟**。其中 setup（调研 + 4 问 + 建追踪/契约/cron + 首批派发）约 18 分钟，执行 14 批 144 模块约 64 分钟，吞吐约 2.25 模块/分钟（每批 7-14 个并发）。
+- **故障**：148 次派发里 4 次瞬时故障（1 次 prompt schema 校验失败 + 3 次 connection reset），全部用 `task_id` resume 恢复，零进度丢失。
+- **纠偏**：子 agent 反复对拍源码纠正我 prompt 里的错误假设——`MultiplayerReplicator`→`SceneReplicationInterface`、`modules/raycast` 是 Embree 后端不是 RayCast 节点、`modules/svg` 用 ThorVG 不是 nanosvg、`core/input` 无 `InputFilter`……「写前 grep 确认」纪律在 144 个自治 agent 里真实生效。
+- **对账**：我发现最初写的「145 / modules 58」是错的，对账文件系统实际是 144 / 57，已修正 `docs/INDEX.md`。
+
+---
+
+## Era 8 — 索引并入 AGENTS.md/CLAUDE.md，push 到远端
+
+| ME | YOU |
+|---|---|
+| 「这些 doc 做成索引加入到 Agent md 和 claude md」「add files push to remote」 | 把 `docs/INDEX.md` 升级成可点击阅读索引（保留 `- [x]` 标记不破坏流水线）；给 AGENTS.md、CLAUDE.md 各加一节「Module teaching docs (144)」；扫无敏感信息后 `git add -A` → commit `83bd709`（231 文件 +34324 行）→ 推到 `origin/4.7-local`。 |
+
+---
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（decide, correct, kill）
@@ -98,3 +120,17 @@
 ### 一句话总结
 
 人把「信可执行源、宁可省略」的纪律写进任务并反复验收，AI 负责把散文压成带锚点的事实、在对拍中揪出自己的过时假设、并如实报告「零改动 / 不适用 / 记忆为空」——**人立标准，AI 保真。**
+
+---
+
+## 7×24 自治 agent 的启发（来自 144 模块文档化）
+
+**结论：1 小时 22 分钟跑完 144 个模块（148 次派发、4 次瞬时故障全恢复、零进度丢失）——自治 agent 能 24 小时干活，前提是「契约 + 状态 + 可恢复」三件套，而不是「不会失败」。**
+
+1. **状态机 + 幂等认领，不是定时器**：`[ ]`/`[~]`/`[x]` 三态 + 「先认领再动手」，让 7-14 个并发 agent 不撞车、崩溃后能续。证据：14 批并行无一次重复写同一模块（Era 7）。
+2. **瞬时故障是常态，resume 是标配**：148 次派发 4 次失败（2.7%）——1 次 prompt schema、3 次 connection reset，全部 `task_id` resume 恢复。7×24 的 agent 必须把「可恢复」当一等公民，而不是假设每次调用都成功（Era 7 故障记录）。
+3. **契约放共享文件，prompt 放最小指令**：`DOC_SPEC.md` + `INDEX.md` 承载全部纪律，每个子 agent 的 prompt 只有 ~15 行指向契约。这是 144 次派发便宜、可扩展的原因（Era 7）。
+4. **质量纪律要写死，才能在自治 agent 里传播**：「写前 grep 确认、不编造」是硬规则，于是子 agent 反复纠正我的错误提示（nanosvg→ThorVG、MultiplayerReplicator→SceneReplicationInterface 等）。纪律写进契约才会被执行，停在口号就没用（Era 7 纠偏）。
+5. **追踪器要对账地面真值**：自治 agent 的追踪器会漂移——我最初写「145 / modules 58」，实际是 144 / 57，靠 INDEX vs 文件系统对账抓出来。不能只信自己的 tracker（Era 7 对账）。
+6. **并行 >> 串行 cron**：按「每 5 分钟 1 个」串行要约 12 小时；14 批并行 64 分钟跑完，约 11 倍加速。7×24 的价值在吞吐，不在「定时」（Era 7 耗时）。
+7. **人干「立契约 + 事后核账」，不盯每个 agent**：我的杠杆在前期（追踪器 + 契约 + cron 任务）和事后（对账计数、抽查质量），中间 14 批是 fire-and-forget 等通知（Era 7 全程）。**

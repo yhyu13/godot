@@ -24,6 +24,56 @@
 
 ---
 
+## 0.5 The philosophy — law vs. metric vs. morality（三层：法律 / 度量 / 道德）
+
+TDD as a system only works if every rule is sorted into exactly one of three
+tiers and the tiers are kept separate. The failure mode is conflating them:
+turning a soft preference into a hard gate produces false reds; turning a hard
+gate into a trend number means it stops being enforced.
+
+| Tier | 中文 | What it is | Enforced by | Examples already in this doc |
+|---|---|---|---|---|
+| **Law** | 法律条文 | Few, binary, machine-checkable, falsifiable, zero-false-positive gates. "Must pass ALL laws to ship." | CI / build breaks | §4.4 DoD: exit 0, targeted green, no regression, test byte-identical between red→green |
+| **Metric** | 度量仪表盘 | Trended numbers that *inform* but do **not** gate. | Dashboard / report | mutation score, coverage delta, cycle time, token cost per green test |
+| **Morality** | 道德约束 | Process principles about judgment; soft, exceptions allowed. | Human review | `.wolf/identity.md` Constraints; "explain before architectural change" |
+
+**The criterion for "can this be a law" is falsifiability（可证伪）.** A rule
+qualifies as law only if a single counterexample breaks it. That is exactly why
+*properties/invariants* — not examples, not preferences — are the natural laws:
+`reverse(reverse(x)) == x` is a law (property-based testing: run N random
+inputs, one counterexample = guilty). A behavioral example `abs(-5) == 5` is a
+*precedent*（判例）, not a law. "Explain before architectural change" is a
+*morality* — it is about judgment and cannot be quantified.
+
+**Two failure modes of over-legislating（为什么「把所有 prop 都升成法律」会失败）:**
+
+1. **False precision（假精度）** — assigning a number to a preference ("should be
+   fast" → "must be <5ms"). The threshold is arbitrary; a slower CI machine turns
+   it red; people then disable the law.
+2. **Goodhart's law（古德哈特）** — "when a measure becomes a target, it ceases to
+   be a good measure." Gate on raw coverage and agents write line-touching
+   no-assertion tests to hit the number. This is why §1.4's interpretation rule
+   says: never gate on raw line coverage; weight mutation score higher.
+
+**Evidence from this repo:**
+
+- A hard law propagates through autonomous agents: `docs/DOC_SPEC.md` made
+  "grep before writing, never fabricate a symbol" a hard rule, and 144
+  autonomous doc-writing agents enforced it — they repeatedly corrected wrong
+  hints (nanosvg→ThorVG, MultiplayerReplicator→SceneReplicationInterface,
+  InputFilter absent). A law written into the contract gets executed; one left
+  as a slogan does not.
+- Not everything can be a law: in that 144-doc run, "doc quality" had no binary
+  gate — only a human spot-check. Quality stays a *morality*, and that is the
+  honest assignment, not a failure.
+
+**One sentence:** laws are valuable because they are *few and unbreakable*, not
+because they are *many and comprehensive* — falsifiable properties become laws,
+trendable quantities become metrics, judgment principles become morality; mix
+them and one false law discredits the whole system.
+
+---
+
 ## 1. Metrics to use
 
 Measure three things independently. A green build alone tells you nothing about
