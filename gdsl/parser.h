@@ -20,7 +20,8 @@ struct TypeDecl {
 
 struct RuleDecl {
 	std::string name; // 规则名，如 "OnHit"
-	std::string by; // 触发源类型，如 "Bullet"
+	std::string by; // 规则所有者类型（self），如 "Bullet"
+	std::string target; // 可选：跨参与者 target 类型，如 "Player"；空 = 无 target
 	std::string when; // guard 表达式原文，如 "target.hp > 0"
 	std::string then; // effect 列表原文，如 "target.hp -= 1, emit(hit)"
 };

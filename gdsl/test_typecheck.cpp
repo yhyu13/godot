@@ -21,8 +21,8 @@ TEST_CASE("[GDSL] Typecheck a valid program") {
 			"    damage: int = 1\n"
 			"\n"
 			"rule OnHit by Bullet:\n"
-			"    when target.hp > 0\n"
-			"    then target.hp -= 1, emit(hit)\n");
+			"    when self.damage > 0\n"
+			"    then self.damage -= 1\n");
 	gdsl::TypedProgram typed;
 	std::string err;
 	REQUIRE(gdsl::typecheck(prog, typed, err));
@@ -90,7 +90,137 @@ TEST_CASE("[GDSL] Reject unknown trigger type in rule") {
 			"type Player @extends Node2D\n"
 			"\n"
 			"rule OnHit by Ghost:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Typecheck fills structured guard and effects") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule TakeDamage by Player:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	REQUIRE(typed.rules.size() == 1);
+	CHECK(typed.rules[0].guard.field == "hp");
+	CHECK(typed.rules[0].guard.cmp == ">");
+	CHECK(typed.rules[0].guard.value == "0");
+	REQUIRE(typed.rules[0].effects.size() == 1);
+	CHECK(typed.rules[0].effects[0].kind == gdsl::EffectKind::Sub);
+	CHECK(typed.rules[0].effects[0].field == "hp");
+	CHECK(typed.rules[0].effects[0].value == "1");
+}
+
+TEST_CASE("[GDSL] Reject rule referencing unknown field") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Heal by Player:\n"
+			"    when self.mana > 0\n"
+			"    then self.hp += 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Typecheck rule with emit_signal effect") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Die by Player:\n"
+			"    when self.hp <= 0\n"
+			"    then emit(died)\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	REQUIRE(typed.rules.size() == 1);
+	REQUIRE(typed.rules[0].effects.size() == 1);
+	CHECK(typed.rules[0].effects[0].kind == gdsl::EffectKind::Emit);
+	CHECK(typed.rules[0].effects[0].signal_name == "died");
+}
+
+TEST_CASE("[GDSL] Reject target ref without a target clause") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule OnHit by Player:\n"
 			"    when target.hp > 0\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Typecheck a rule with a valid target clause") {
+	const gdsl::Program prog = parse(
+			"type Player @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"type Bullet @extends Area2D\n"
+			"state:\n"
+			"    damage: int = 1\n"
+			"\n"
+			"rule OnHit by Bullet target Player:\n"
+			"    when target.hp > 0\n"
+			"    then target.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	REQUIRE(typed.rules.size() == 1);
+	CHECK(typed.rules[0].by == "Bullet");
+	CHECK(typed.rules[0].target == "Player");
+	CHECK(typed.rules[0].guard.ref == gdsl::RefOwner::Target);
+	CHECK(typed.rules[0].guard.field == "hp");
+	REQUIRE(typed.rules[0].effects.size() == 1);
+	CHECK(typed.rules[0].effects[0].ref == gdsl::RefOwner::Target);
+	CHECK(typed.rules[0].effects[0].field == "hp");
+}
+
+TEST_CASE("[GDSL] Reject rule with unknown target type") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule OnHit by Player target Ghost:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Reject rule referencing unknown target field") {
+	const gdsl::Program prog = parse(
+			"type Player @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"type Bullet @extends Area2D\n"
+			"state:\n"
+			"    damage: int = 1\n"
+			"\n"
+			"rule OnHit by Bullet target Player:\n"
+			"    when target.mana > 0\n"
 			"    then target.hp -= 1\n");
 	gdsl::TypedProgram typed;
 	std::string err;

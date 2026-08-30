@@ -186,6 +186,24 @@ bool parse_rule_block(const std::string &text, RuleDecl &out, std::string &err) 
 	}
 	size_t by_end = header.find_first_of(" 	:", pos);
 	out.by = header.substr(pos, by_end == std::string::npos ? std::string::npos : by_end - pos);
+	out.target.clear();
+
+	// 可选 target 子句："target <Type>"（by 之后、':' 之前）。声明跨参与者类型。
+	size_t rest = header.find_first_not_of(" 	", by_end);
+	if (rest != std::string::npos && header[rest] != ':') {
+		const std::string tk = "target ";
+		if (header.compare(rest, tk.size(), tk) != 0) {
+			err = "expected ':' or 'target <Type>' after 'by <Type>'";
+			return false;
+		}
+		size_t tpos = header.find_first_not_of(" 	", rest + tk.size());
+		if (tpos == std::string::npos || header[tpos] == ':') {
+			err = "missing target type";
+			return false;
+		}
+		size_t t_end = header.find_first_of(" 	:", tpos);
+		out.target = header.substr(tpos, t_end == std::string::npos ? std::string::npos : t_end - tpos);
+	}
 	i++;
 
 	// 2. when 行

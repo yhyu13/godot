@@ -137,6 +137,58 @@ TEST_CASE("[GDSL] Parse a rule block") {
 	CHECK(rule.then == "target.hp -= 1, emit(hit)");
 }
 
+TEST_CASE("[GDSL] Parse a rule block with a target clause") {
+	gdsl::RuleDecl rule;
+	std::string err;
+	bool ok = gdsl::parse_rule_block(
+			"rule OnHit by Bullet target Player:\n"
+			"    when target.hp > 0\n"
+			"    then target.hp -= 1, emit(hit)\n",
+			rule, err);
+	REQUIRE(ok);
+	CHECK(rule.name == "OnHit");
+	CHECK(rule.by == "Bullet");
+	CHECK(rule.target == "Player");
+	CHECK(rule.when == "target.hp > 0");
+	CHECK(rule.then == "target.hp -= 1, emit(hit)");
+}
+
+TEST_CASE("[GDSL] Parse a rule block without a target clause") {
+	gdsl::RuleDecl rule;
+	std::string err;
+	bool ok = gdsl::parse_rule_block(
+			"rule OnHit by Bullet:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n",
+			rule, err);
+	REQUIRE(ok);
+	CHECK(rule.target.empty());
+}
+
+TEST_CASE("[GDSL] Reject a rule block with a target clause but missing type") {
+	gdsl::RuleDecl rule;
+	std::string err;
+	bool ok = gdsl::parse_rule_block(
+			"rule OnHit by Bullet target:\n"
+			"    when target.hp > 0\n"
+			"    then target.hp -= 1\n",
+			rule, err);
+	CHECK_FALSE(ok);
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Reject a rule block with an unexpected header token") {
+	gdsl::RuleDecl rule;
+	std::string err;
+	bool ok = gdsl::parse_rule_block(
+			"rule OnHit by Bullet bogus Player:\n"
+			"    when target.hp > 0\n"
+			"    then target.hp -= 1\n",
+			rule, err);
+	CHECK_FALSE(ok);
+	CHECK_FALSE(err.empty());
+}
+
 TEST_CASE("[GDSL] Reject a rule block missing when") {
 	gdsl::RuleDecl rule;
 	std::string err;

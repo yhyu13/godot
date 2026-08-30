@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "parser.h"
+#include "effect.h"
 
 namespace gdsl {
 
@@ -25,8 +26,11 @@ struct TypedType {
 struct TypedRule {
 	std::string name;
 	std::string by;
+	std::string target; // 跨参与者 target 类型（空 = 无）
 	std::string when;
 	std::string then;
+	Guard guard; // 结构化 when（ontology v1：self/target 字段比较）
+	std::vector<Effect> effects; // 结构化 then（ontology v1：set_field / emit）
 };
 
 struct TypedProgram {
@@ -34,7 +38,8 @@ struct TypedProgram {
 	std::vector<TypedRule> rules;
 };
 
-// 类型检查：拒绝重复类型名、未知字段类型、重复字段名、未知触发类型。
+// 类型检查：拒绝重复类型名、未知字段类型、重复字段名、未知触发类型，
+// 以及规则 when/then 不合 ontology（未知字段引用 / emit_signal / 跨参与者）。
 // 成功返回 true 并填 typed IR；失败返回 false 并写 err。
 bool typecheck(const Program &prog, TypedProgram &out, std::string &err);
 
