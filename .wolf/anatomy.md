@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-08-28T15:54:10.177Z
-> Files: 513 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-08-30T08:01:14.188Z
+> Files: 526 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -36,6 +36,8 @@
   - fn `include_file_in_raw_header` L258-274 (~175 tok)
   - fn `build_raw_header` L275-285 (~96 tok)
   - fn `build_raw_headers` L286-290 (~41 tok)
+- `JOURNEY.md` — JOURNEY.md — godot 引擎 fork 的引导阶段记录 (~2373 tok)
+- `kilo.json` (~299 tok)
 - `LICENSE.txt` (~288 tok)
 - `methods.py` — URL patterns: 1 routes (~18719 tok)
   - fn `set_scu_folders` L30-34 (~26 tok)
@@ -190,8 +192,13 @@
 - `web_builds.yml` — CI: 🌐 Web Builds (~586 tok)
 - `windows_builds.yml` — CI: 🏁 Windows Builds (~1323 tok)
 
+## .kilo/
+
+- `review-warnings.md` — Review Warnings (auto-generated) (~38 tok)
+
 ## .kilo/command/
 
+- `git-review.md` — 1. 查改动 (~368 tok)
 - `reframe.md` — Mode: migrate [framework] (~561 tok)
 - `security-audit.md` — Layer 1 — Dependencies (~520 tok)
 
@@ -341,6 +348,10 @@
   - fn `appendSessionSummary` L125-137 (~219 tok)
   - fn `readHippoStats` L138-151 (~120 tok)
 - `types.ts` — Exports FileRead, FileWrite, SessionState, PartialSessionState + 2 more (~253 tok)
+
+## C:/Users/XINDONG/AppData/Local/Temp/kilo/
+
+- `gdsl_repro.cpp` — Declares char (~224 tok)
 
 ## core/
 
@@ -841,3 +852,17 @@
 - `span.h` — ********************************************************************** (~2543 tok)
 - `tuple.h` — ********************************************************************** (~1724 tok)
 - `vector.h` — ********************************************************************** (~3318 tok)
+
+## doc_ai/
+
+- `GODOT_LLM_DSL_DESIGN.md` — LLM-friendly DSL design: 2-layer (JSON→tscn declarative / GDExtension-ptrcall logic), TDD seams (~1600 tok)
+- `PLAN_LLM_DSL_IMPL.md` — PLAN — Godot LLM DSL 实现 · 第 1 阶段（编译器内核） (~612 tok)
+- `SOP_TDD_AI_TESTING.md` — TDD+AI testing SOP: metrics, test selection, writing guide, AI follow-through (~2000 tok)
+
+## gdsl/
+
+- `.gitignore` — Git ignore rules (~9 tok)
+- `parser.cpp` — Declares std (~573 tok)
+- `parser.h` — Declares Name (~199 tok)
+- `test_parser.cpp` — Declares declaration (~563 tok)
+- `test.ps1` (~144 tok)

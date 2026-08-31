@@ -1,0 +1,19 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "permission": {
+    "bash": {
+      "git push --force*": "deny",
+      "git push -f*": "deny",
+      "git push --delete*": "deny",
+      "git reset --hard*": "deny",
+      "git clean*": "deny",
+      "*": "allow"
+    },
+    "edit": {
+      "thirdparty/**": "deny",
+      "**/*.gen.h": "deny",
+      "**/register_module_types.gen.cpp": "deny",
+      "**/*.compat.inc": "deny"
+    }
+  }
+}

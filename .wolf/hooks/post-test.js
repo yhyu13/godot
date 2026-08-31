@@ -1,5 +1,7 @@
 import { getWolfDir, ensureWolfDir, readStdin, getProjectDir, extractTestFailures, } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
+import { loadSpecState, saveSpecState } from "../specs/spec-store.js";
+import { setStatus } from "../specs/phase-machine.js";
 const TEST_COMMAND_RE = /(?:^|[\s&|;])(?:pnpm|npm|yarn|bun|npx|python|pytest|go|deno|node)\s+(?:run\s+)?(?:test|jest|vitest|ava|mocha|karma|cypress|playwright|spec|check)\b/i;
 const TEST_FLAG_RE = /(?:--test|--tests|test:|\btest\b)/i;
 /**
@@ -86,6 +88,21 @@ async function main() {
     catch (error) {
         // Fail silently - hippocampus should not break the agent loop.
         process.stderr.write(`OpenWolf hippocampus: test hook skipped (${String(error)})\n`);
+    }
+    // SDD hard gate: a red test during the implement phase blocks the active
+    // spec, so the agent cannot declare the task done while the build is red.
+    // Only fires when a spec is active and in the implement phase (green is the
+    // gate); test failures in other phases are recorded above but do not block.
+    try {
+        const state = loadSpecState(wolfDir);
+        if (state.activeSpec && state.phase === "implement" && state.status === "active") {
+            const blocked = setStatus(state, "blocked", now);
+            saveSpecState(wolfDir, blocked);
+            process.stderr.write(`🧪 OpenWolf SDD: test failed during implement phase — spec "${state.activeSpec}" marked blocked. Fix the red, then 'openwolf spec resume'.\n`);
+        }
+    }
+    catch {
+        // fail open — the SDD gate must never break the agent loop
     }
     process.exit(0);
 }

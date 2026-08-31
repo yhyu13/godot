@@ -652,14 +652,13 @@ export function normalizePath(p) {
  * Mechanical entries (auto-generated file ops, session-end lines) don't count.
  * Used by the stop hook to detect whether Claude wrote a meaningful summary.
  */
-export function countSemanticEntries(wolfDir, sessionStarted) {
+export function countSemanticEntries(wolfDir, sessionStarted, now = new Date()) {
     const memoryPath = path.join(wolfDir, "memory.md");
     try {
         const content = fs.readFileSync(memoryPath, "utf-8");
         const mechanical = /^\|\s*[\d:]+\s*\|\s*(Created|Edited|Multi-edited|Session end:|designqc:)/;
         const started = sessionStarted ? new Date(sessionStarted) : null;
         const hasValidStart = started !== null && !Number.isNaN(started.getTime());
-        const now = new Date();
         const startMinutes = hasValidStart
             ? started.getHours() * 60 + started.getMinutes()
             : 0;

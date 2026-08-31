@@ -2,6 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getWolfDir, ensureWolfDir, readJSON, readMarkdown, readStdin, resolveProjectPath } from "./shared.js";
 import { Hippocampus } from "../hippocampus/index.js";
+import { loadSpecState } from "../specs/spec-store.js";
+import { buildTddReminder } from "../specs/inject.js";
 async function main() {
     ensureWolfDir();
     const wolfDir = getWolfDir();
@@ -26,6 +28,15 @@ async function main() {
     }
     // 1. Cerebrum Do-Not-Repeat check
     checkCerebrum(wolfDir, allContent);
+    // 1b. SDD: test-first reminder while the active spec is in tasks/implement.
+    try {
+        const reminder = buildTddReminder(loadSpecState(wolfDir));
+        if (reminder)
+            process.stderr.write(`\n${reminder}`);
+    }
+    catch {
+        // fail open
+    }
     // 2. Hippocampus trauma check - warn about high-intensity trauma in the file
     if (filePath) {
         checkHippocampus(wolfDir, filePath);
