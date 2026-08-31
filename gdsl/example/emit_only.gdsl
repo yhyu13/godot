@@ -1,0 +1,7 @@
+type Player @extends Node2D
+state:
+    hp: int = 3
+
+rule Die by Player:
+    when self.hp <= 0
+    then emit(died)

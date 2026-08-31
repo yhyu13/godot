@@ -1,0 +1,8 @@
+[configuration]
+
+entry_symbol = "gdsl_library_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+windows.x86_64 = "res://target_only.dll"

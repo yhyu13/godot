@@ -19,6 +19,9 @@ static void emit_node(const NodeSpec &node, const std::string &parent, std::stri
 std::string emit_tscn(const SceneSpec &spec) {
 	std::string out = "[gd_scene format=3]\n";
 	emit_node(spec.root, "", out);
+	for (const Connection &c : spec.connections) {
+		out += "\n[connection signal=\"" + c.signal + "\" from=\"" + c.from + "\" to=\"" + c.to + "\" method=\"" + c.method + "\"]\n";
+	}
 	return out;
 }
 

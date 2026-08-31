@@ -18,8 +18,16 @@ struct NodeSpec {
 	std::vector<NodeSpec> children;
 };
 
+struct Connection {
+	std::string signal; // 信号名，如 "hit"
+	std::string from; // 发射方节点名
+	std::string to; // 接收方节点名
+	std::string method; // 接收方方法名，如 "_on_player_hit"
+};
+
 struct SceneSpec {
 	NodeSpec root; // 根节点，整棵树挂在 root.children 下
+	std::vector<Connection> connections; // 信号连接（[connection] 块）
 };
 
 // 把场景配方编译成 .tscn 文本（确定性：同一输入逐字节同一输出）。

@@ -1,0 +1,7 @@
+[application]
+
+config/name="gdsl e2e"
+
+[editor_plugins]
+
+enabled=PackedStringArray()

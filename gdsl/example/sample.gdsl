@@ -1,0 +1,12 @@
+type Player @extends CharacterBody2D
+state:
+    hp: int = 3
+    speed: float = 400.0
+
+type Bullet @extends Area2D
+state:
+    damage: int = 1
+
+rule OnHit by Bullet target Player:
+    when target.hp > 0
+    then target.hp -= 1, emit(hit)

@@ -88,6 +88,45 @@ static bool map_node(const JsonValue &j, NodeSpec &out, std::string &err) {
 	return true;
 }
 
+static void collect_names(const NodeSpec &node, std::vector<std::string> &names) {
+	names.push_back(node.name);
+	for (const NodeSpec &child : node.children) {
+		collect_names(child, names);
+	}
+}
+
+static bool map_connection(const JsonValue &j, Connection &out, std::string &err) {
+	if (j.type != JsonValue::Type::Object) {
+		err = "connection must be an object";
+		return false;
+	}
+	const JsonValue *signal = j.find("signal");
+	const JsonValue *from = j.find("from");
+	const JsonValue *to = j.find("to");
+	const JsonValue *method = j.find("method");
+	if (!signal || signal->type != JsonValue::Type::String) {
+		err = "connection missing 'signal' string";
+		return false;
+	}
+	if (!from || from->type != JsonValue::Type::String) {
+		err = "connection missing 'from' string";
+		return false;
+	}
+	if (!to || to->type != JsonValue::Type::String) {
+		err = "connection missing 'to' string";
+		return false;
+	}
+	if (!method || method->type != JsonValue::Type::String) {
+		err = "connection missing 'method' string";
+		return false;
+	}
+	out.signal = signal->string_value;
+	out.from = from->string_value;
+	out.to = to->string_value;
+	out.method = method->string_value;
+	return true;
+}
+
 bool scene_from_json(const std::string &json, SceneSpec &out, std::string &err) {
 	JsonValue root;
 	if (!parse_json(json, root, err)) {
@@ -116,6 +155,40 @@ bool scene_from_json(const std::string &json, SceneSpec &out, std::string &err) 
 				return false;
 			}
 			out.root.children.push_back(std::move(child));
+		}
+	}
+	if (const JsonValue *connections = root.find("connections")) {
+		if (connections->type != JsonValue::Type::Array) {
+			err = "'connections' must be an array";
+			return false;
+		}
+		for (const JsonValue &c : connections->array) {
+			Connection conn;
+			if (!map_connection(c, conn, err)) {
+				return false;
+			}
+			out.connections.push_back(std::move(conn));
+		}
+	}
+	// 语义校验（FR-004）：connection 的 from/to 必须引用场景中已存在的节点。
+	std::vector<std::string> names;
+	collect_names(out.root, names);
+	auto has_name = [&names](const std::string &n) {
+		for (const std::string &existing : names) {
+			if (existing == n) {
+				return true;
+			}
+		}
+		return false;
+	};
+	for (const Connection &c : out.connections) {
+		if (!has_name(c.from)) {
+			err = "connection references nonexistent node '" + c.from + "' (from)";
+			return false;
+		}
+		if (!has_name(c.to)) {
+			err = "connection references nonexistent node '" + c.to + "' (to)";
+			return false;
 		}
 	}
 	return true;

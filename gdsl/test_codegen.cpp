@@ -144,7 +144,7 @@ TEST_CASE("[GDSL] Emit emit_signal codegen with method-bind hash and helper") {
 			"    then emit(died)\n");
 	const std::string c = gdsl::emit_c(typed);
 	// 缓存 Object::emit_signal MethodBind（精确兼容哈希，来自 abihash.h）。
-	CHECK(c.find("gdsl_classdb_get_method_bind(&sn_Object, &sn_emit_signal, 2866548813);") != std::string::npos);
+	CHECK(c.find("gdsl_classdb_get_method_bind(&sn_Object, &sn_emit_signal, 4047867050);") != std::string::npos);
 	// 信号名 static StringName 缓存 + 发射 helper 调用。
 	CHECK(c.find("static gdsl_StringName gdsl_signal_died;") != std::string::npos);
 	CHECK(c.find("gdsl_string_name_new(&gdsl_signal_died, \"died\", true);") != std::string::npos);

@@ -1,3 +1,15 @@
 # gdsl 构建产物，不进版本控制
 *.exe
 *.obj
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.map
+
+# gdsl 真机集成样例的运行时状态 / 调试残留（不进版本控制）
+.godot/
+*.gdextension.uid
+DIAGNOSTIC.txt
+*_trace.c

@@ -2,7 +2,7 @@
 
 > 本文件记录「人怎么决策、纠正、砍方向」与「AI 怎么执行、证伪、诚实报告」的时间线。
 > 列名：`ME = 用户`，`YOU = AI`。日期格式 `YYYY-MM-DD`。
-> 当前阶段：**LLM 友好 DSL 内核完成**——设计文档（两轮 critic 收敛零 blocking）+ 实现计划 + `gdsl/` 编译器内核（parser + 声明式 codegen + JSON/schema + typechecker + 逻辑 codegen，S1–S5 全 red-green，35 用例 125 断言全绿）。剩余：S6 引擎集成（scons + GDExtension）。上一阶段：144 子系统文档化 commit `83bd709`。
+> 当前阶段：**S6 真机集成进行中**（route B 跑通：`.gdsl` → 生成 C → `cl` 编 `.dll` → `.gdextension` manifest → 引擎加载）。本阶段修掉两个真机 bug（emit_signal 兼容哈希 + hint_string NULL 崩溃），83 用例 / 335 断言全绿；**还剩一个退出阶段 segfault（EXIT 139）未修**——任何注册了方法的 GDExtension 退出时都崩，根因假设（DLL 卸载顺序 vs MethodBind 悬空指针）已提出但无符号栈证实。
 
 ## 风险与待办（roll-up，非替换——各时代的行内风险/待办仍在原表里）
 
@@ -12,6 +12,7 @@
 - **[Era 4·OpenWolf] anatomy.md 对 C++ 文件价值低**：`file_count=513, hits=0`，多数描述只是版权首行（如把 `CLAUDE.md` 标成「OpenWolf」）。RISK：agent 依赖 anatomy 描述会读到无意义文本。
 - **[Era 2-3·AGENTS] 两份指令文件会漂移**：`AGENTS.md`（紧凑）与 `CLAUDE.md`（更详）内容重叠（构建/测试/架构/贡献约定）。TODO：后续改动若只更新一份，另一份会过期。
 - **[Era 8·push] `.wolf/` 运行时状态文件被提交进 git**：`hippocampus.json`/`token-ledger.json`/`_scan-state.json` 等含机器绝对路径 `D:\GitRepo-My\godot`，会随每次会话变化产生提交噪声。待确认：是否给 `.gitignore` 加规则排除。
+- **[Era 17·真机集成] 退出阶段 segfault（EXIT 139）未修**：任何注册了方法的 GDExtension 退出时都崩，最小 self-only 规则也崩。最可信假设（未证实）：GDExtensionMethodBind 存着指向 DLL 的 call_func/ptrcall_func 函数指针，DLL 在 `ClassDB::cleanup()`（`class_db.cpp:2350` memdelete MethodBind）之前被 `close_library` 卸载 → MethodBind 析构时悬空解引用。证据缺口：cdb 卡住/超时、procdump 抓不到（崩溃在 teardown）、WER LocalDumps 没落盘——无真实调用栈，只有源码路径推理。
 
 ---
 
@@ -128,6 +129,109 @@
 - **切片落地**：S3 补全 parser 到完整 AST（`Program{types,rules}`）；S1 `emit_tscn` golden 逐字节；S2 `scene_from_json`（JSON→tscn 端到端 tracer bullet 通过）；S4 `typecheck` 拒绝重复类型名/未知字段类型/重复字段/未知触发类型；S5 `emit_c` 类型映射（int→int64_t、float→double、Named→指针）+ 确定性。
 - **诚实边界（S6 未做）**：环境无 scons、无内置引擎二进制；且 `emit_c` 当前只输出 struct 定义 + rule 注释，尚未生成真 GDExtension 注册/effect/ptrcall 代码——此时接引擎是接骨架。S6 需 (a) 装 scons + 全量引擎构建；(b) 先把 S5 codegen 扩到真 GDExtension 代码。
 - **踩坑**：`\uXXXX` 转义下标（读 `s[i+1+k]` 而非 `s[i+k]`）；多文件 doctest 只有一个 `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`（test_parser.cpp），其余 test 文件只 `#include "doctest.h"`。
+
+---
+
+## Era 11 — S6.1：codegen 扩到真 GDExtension 注册层
+
+| ME | YOU |
+|---|---|
+| 「both」——(1) 回填 memory.md 的 Era 10 动作日志，(2) 进 S6 第一步：扩 codegen 到真 GDExtension 代码（先纯 codegen 测试，不依赖 scons）。 | 回填 memory；用 `core/extension/gdextension_interface.json` + `gdextension_interface_header_generator.cpp:307-313` 逐条核对 4.7 ABI（`classdb_register_extension_class6` / `GDExtensionClassCreationInfo6` / `GDExtensionClassCreateInstance3` / `string_name_new_with_latin1_chars` / `classdb_construct_object` / `object_set_instance` / `mem_alloc/free`），并对照官方 GDExtension C example 的 create/free instance 范式；`emit_c` 从「struct + 注释」扩成完整 GDExtension C 源（入口点 + API 缓存 + SCENE 初始化 + 每类型注册 + 实例生命周期 + 状态字段 C struct）。 |
+
+- **事实锚点**：`gdsl/codegen_logic.{h,cpp}` 重写；`gdsl/test_codegen.cpp` 4 用例 → 7 用例；累计 38 用例 / 147 断言全绿（red 证据 = 新增 GDExtension 断言对旧 emit_c 全失败，5 用例 16 断言红）。生成 C 源经肉眼 dump 核对：brace 平衡、ABI 符号正确、确定性。
+- **决策 D3**：用 `classdb_register_extension_class6`（4.7 最新，无 deprecated 警告）；`GDExtensionClassCreationInfo6 class_info = { 0 }` 零初始化 + 只设非默认字段（比 22 字段 designated initializer 更可移植，规避 MSVC C99 designated-init 限制）。
+- **诚实边界**：规则仍为注释——effect/ptrcall codegen 被 effect ontology 开放决策（设计文档 §7 最大风险）阻塞，未擅自发明 ontology。S6 剩余：effect/ptrcall、`modules/gdsl/` 模块、scons 真机构建。
+- **踩坑**：dump 样例程序漏声明 `type Bullet` 触发 typecheck 拒绝「unknown trigger type」（非 codegen bug，是样例输入错）。
+
+---
+
+## Era 12 — S6.2a：effect/ptrcall codegen v1（set_field + 方法注册）
+
+| ME | YOU |
+|---|---|
+| 「自治开发循环：把两层 DSL 落地为可编译可测的编译器… 每轮先读 STATUS… 开放决策拍最小可辩护 ontology 继续，不要停摆」 | 读 STATUS/cerebrum/anatomy；定位到 S6 的 effect/ptrcall codegen 是当前唯一不阻塞切片（scons/模块集成被环境阻塞）。拍板 effect ontology v1（D4）：`set_field` + 单比较 guard、self-only；`emit_signal`/跨参与者 `target` 明确拒绝。red→green 落地 `gdsl/effect.{h,cpp}`（guard/effect 解析器）+ typecheck 结构化 when/then + `emit_c` 规则→方法（`_impl`/`_call`/`_ptr` + `classdb_register_extension_class_method`）。 |
+
+- **事实锚点**：`gdsl/effect.{h,cpp}` 新建；`gdsl/typecheck.{h,cpp}`（TypedRule 增 `guard`/`effects` + 字段存在性校验）、`gdsl/codegen_logic.cpp`（方法发射 + API 缓存 + 方法注册）、`gdsl/test_effect.cpp`（新）、`gdsl/test_typecheck.cpp`、`gdsl/test_codegen.cpp`、`gdsl/test.ps1` 改。累计 **57 用例 / 226 断言全绿**（red 证据 = effect 解析器 stub 阶段 `50 用例 44 passed 6 failed`，全是断言红非编译错；codegen 阶段「ruleless 类型无方法注册」用例因断言串误匹配 API 缓存名先红后修）。
+- **决策 D4（effect ontology v1）**：动词从 `set_field` 起步；guard 单比较；`ref` 仅 `self`。规则→方法走 `classdb_register_extension_class_method`（call_func + ptrcall_func 双路径，零参方法两路径 body 一致）。`emit_signal`/`target` 明确拒绝而非静默忽略。
+- **诚实边界（emit_signal 为何不做）**：GDExtension ABI **无** `object_emit_signal`（`gdextension_interface.json` 全 grep 零命中）；唯一路径是 `classdb_get_method_bind("Object","emit_signal",hash)` + `object_method_bind_call`，但 `classdb_get_method_bind` 要求精确方法哈希（`class_db.cpp:1166-1198` 走 `get_method_with_compatibility` 要求 `get_hash()` 全等），而 `MethodBind::get_hash()` = `MethodInfo::get_compatibility_hash()`（`method_bind.cpp:35-45`，含参数类型签名），`emit_signal` 是 variadic，哈希必须从 `extension_api.json` dump 取——不能瞎编哈希。留 S6.2b。
+- **验证**：生成 C 经 stub `gdextension_interface.h`（按 json 类型名/字段名手写）用 `cl /c` 语法编译通过（`SYNTAX OK`），证明发射的 C 结构/成员名/函数指针类型/转换全部合法。
+- **踩坑**：`test_codegen.cpp` 的「ruleless 类型无方法注册」用例断言 `c.find("classdb_register_extension_class_method") == npos`，但该串总出现在 API 缓存声明里 → 红；改成断言「注册调用串」`gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &method_info);` 缺席后绿。
+
+---
+
+## Era 13 — S6.2b：emit_signal codegen（D5 阻塞解除，哈希从源码算）
+
+| ME | YOU |
+|---|---|
+| （自治 cron，延续「拍最小可辩护 ontology 继续，不要停摆」） | 读 STATUS/cerebrum/anatomy；定位 S6.2b `emit_signal` 是唯一不被 scons/模块集成阻塞的切片（D5 说哈希必须从 `extension_api.json` dump 取，但环境无内置引擎 dump 不了）。**推翻 D5 的「只能 dump」结论**：`get_compatibility_hash` 是纯结构哈希（方法名不参与），可逐条移植 Godot 源码的 murmur3/fmix 自己算。 |
+
+- **事实锚点（哈希怎么算出来的，非手编）**：移植 `hash_murmur3_one_32`+`hash_fmix32`（`core/templates/hashfuncs.h:112-122,144-150`）与 `get_compatibility_hash`（`core/object/method_info.cpp:87-116`）；`emit_signal` 的 MethodInfo（`core/object/object.cpp:1864-1870`）＝ 1 个 STRING_NAME 参数（`variant.h:96-124`，NIL=0…STRING_NAME=21）+ vararg（`method_bind.h:178` `is_vararg()=true`）+ 无返回 + 无默认参数。独立 standalone 程序算出 **2866548813 (0xAADC104D)**，再把它钉进 `gdsl/test_abihash.cpp` 断言（`emit_signal_compat_hash()==2866548813u`），防引擎 MethodInfo 漂移。
+- **Variant 封送的坑**：4.7 ABI **无** `variant_new_string_name`（grep 全 json 只有 `variant_new_copy/nil` + 通用 `variant_construct`），改用 `get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_STRING_NAME)`（`gdextension_interface.cpp:564-607` 返回 `VariantTypeConstructor<StringName>::variant_from_type`）。**无** `string_name_destroy` → 每发射一次建 StringName 会无界泄漏 `static_count`（`string_name.cpp:231-232`），故信号名用 `p_is_static=true` 缓存一次复用（static StringName 免析构、程序生命周期）。
+- **落地**：`gdsl/abihash.h` 新建；`effect.{h,cpp}` 增 `EffectKind::Emit` + `parse_emit`（`emit(<ident>)` 零参，带参/空名/未闭合明确拒绝）；`typecheck.cpp` Emit 效果跳过字段校验；`codegen_logic.cpp` 发射 emit_signal 缓存（`classdb_get_method_bind` + hash 字面量）+ `gdsl_emit_signal` helper（Variant 封送 + `object_method_bind_call` + `variant_destroy`）+ 信号名 static StringName 去重缓存；`test.ps1` 加 `test_abihash.cpp`。累计 **66 用例 / 264 断言全绿**（red 证据 = `hash_fmix32(0)!=0` 断言先红——我误以为 fmix 不是恒等，实为 fmix(0)==0，修正断言后绿）。
+- **验证**：生成 C（含 emit 规则样例）经 stub `gdextension_interface.h`（类型/字段名逐条对照 json）`cl /c` 语法编译通过（EXIT=0 零警告），证明发射的 `classdb_get_method_bind`/`object_method_bind_call`/`get_variant_from_type_constructor` 调用与 typedef/struct 字段全部合法。
+- **诚实边界**：Variant 封送的**运行时正确性未验证**（无引擎二进制，`cl /c` 只证明语法/类型合法，不证明信号真的发出）。哈希值已从源码推导 + 独立程序 + 测试三处一致，但最终以真机 `extension_api.json` dump 对拍为准。`target` 跨参与者（S6.2c）仍开放——需先定 target 类型来源。
+- **决策 D5 记录**：见 STATUS「Closed decisions」与 cerebrum「Decision Log」。
+
+---
+
+## Era 14 — S6.2c：跨参与者 target codegen（D6/D7 拍板）
+
+| ME | YOU |
+|---|---|
+| （自治 cron，延续「拍最小可辩护 ontology 继续，不要停摆」；指令明确 route B = GDExtension 为集成路径） | 读 STATUS/cerebrum/anatomy/cron_digest/设计文档；定位 S6.2c `target` 是最后一个不被 scons/引擎二进制阻塞的 codegen 切片。**拍板 D6**（target 类型显式声明 `rule ... by <Owner> target <Type>:`，不用默认同型/固定 Node——前者=自我无意义、后者丢类型安全）+ **D7**（ABI 无 `object_get_instance`，跨对象取回 C struct 唯一路径 = instance binding）。red→green 落地 parser/effect/typecheck/codegen 四层。 |
+
+- **事实锚点（D7 的关键 ABI 缺口）**：`object_set_instance`（写 self 的 extension instance）存在、但 grep `gdextension_interface.json` **零命中 `object_get_instance`**——引擎内部 `Object::_get_extension_instance()`（`object.h:525`）只在方法调用时把 self 传给 `p_instance`，跨对象取回只能走 instance binding。已核对引擎源码：`GDExtensionMethodBind::call` 用 `p_object->_get_extension_instance()`（`gdextension.cpp:106`）取 self；binding 由 `set_instance_binding`/`get_instance_binding`（`object.cpp:2153,2167`）token 键存取，`free_callback` 为 NULL 时不触发（内存仍由 `free_instance_func` 释放，`object.cpp:194` 的 `_extension->free_instance` 路径）。
+- **落地**：`gdsl/effect.{h,cpp}` 增 `RefOwner{Self,Target}` + `resolve_ref`（self/target/裸字段）；`gdsl/parser.{h,cpp}` 增 `RuleDecl.target` + 可选 target 子句解析；`gdsl/typecheck.{h,cpp}` 增 `TypedRule.target` + 按 ref 选 owner 校验字段 + 拒绝「引 target 无子句」；`gdsl/codegen_logic.cpp` 规则方法扩成带 `GDExtensionObjectPtr p_target`（`argument_count=1` + OBJECT `arguments_info`）+ instance binding 取回 + `_call` 用 `get_variant_to_type_constructor(OBJECT)` 解 Variant + `_ptr` 用 `*(GDExtensionObjectPtr*)p_args[0]`。累计 **77 用例 / 319 断言全绿**（red 证据 = 实现前跑出 77 用例 68 passed 9 failed / 290 断言 12 failed，全是新 target 用例断言红非编译错）。
+- **验证**：生成 C（含 `rule OnHit by Bullet target Player` 样例）经扩展 stub ABI 头（`GDExtensionPropertyInfo` + binding 回调 + 完整 `GDExtensionClassMethodInfo`）`cl /c` 语法编译通过（SYNTAX OK 零警告）。运行时正确性仍未验证（无引擎二进制，见诚实边界）。
+- **诚实边界**：`target` 取回的**运行时正确性未验证**（`cl /c` 只证明语法/类型合法）；`object_get_instance_binding` 对非 DSL 对象会走 NULL `create_callback`（已提供返回 NULL 的 `gdsl_binding_create` + `_impl` 里 target==NULL 早退，防御性兜底），但该路径未经真机确认。route B 集成（生成 C → `.dll` → `.gdextension` → 真场景）仍是 S6 剩余硬仗，需要 Godot 引擎二进制。
+- **踩坑**：patch 编辑 STATUS.md 时，D5 行里的 C 字符串字面量 `\"Object\"` 触发 escape-drift 检测——改用不含 `\"` 的锚点（测试计数行）插入 S6.2c 条目，绕开。
+
+---
+
+## Era 15 — spec-kit init + OpenWolf SDD 接入（grill 驱动）
+
+| ME | YOU |
+|---|---|
+| 「use spec-kit init this project based on doc_ai but grill me」 | 先查实：`doc_ai/` 3 份文档、`gdsl/` 已是 3 commit 的完整内核（77 用例）、GitHub Spec Kit `specify` CLI 已装但**从未在仓库初始化**（无 `.specify/`/`constitution.md`）、OpenWolf SDD 已脚手架（`.wolf/spec-templates/` + 4 套 agent 命令）。三轮 grill 收敛。 |
+| 反问「compare GitHub Spec Kit with openwolf, which has hardline on test」 | 对拍两套系统源码：Spec Kit 模板里 tests 标注「OPTIONAL」，无运行时 hook；OpenWolf 有 `post-test.js`（观测失败写 hippocampus）+ pre-read/pre-write TDD 提醒 + tasks-template 硬 phase gate。结论：OpenWolf 在测试硬门轴上明显更强，但**拒绝说 100%**——如实降级为「right design, wrong install」（见下）。 |
+| 拍板 Q1=OpenWolf、Q2=scope 到 gdsl+doc_ai、Q3=retro+forward S6、Q4=中文叙事+英文标识符 | 执行：修运行时、promote DoD、写 9 spec、设 active。 |
+
+- **抓到 OpenWolf `init` 的 stale copy-list bug**：`copyHookScripts`（`src/cli/init.js`）只拷 13 个固定 hook 文件，但打包的 `pre-read.js`/`pre-write.js` import `../specs/spec-store.js` + `../specs/inject.js`，init **从不拷 `specs/` 运行时** → 每次全新 `openwolf init` 的 SDD 注入 + TDD 提醒都抛 MODULE_NOT_FOUND（被 catch → fail open 静默）。**本地修法**：把 openwolf 包 `dist/hooks/specs/*.js` 拷进本仓库 `.wolf/specs/`（不是 `.wolf/hooks/specs/`——import 是 `../specs/` 相对 `.wolf/hooks/`）。node 验证 pre-read/pre-write 均 RESOLVES。
+- **openwolf 本身没修、没 push**：openwolf 是个独立 git 仓库（`C:\nvm4w\nodejs\node_modules\openwolf`，origin=`github.com/yhyu13/openwolf`，branch main），本次**只从它读、往外拷**，零写入零 push。它自身 `copyHookScripts` 的 bug 仍在（修它需在 openwolf 仓库里给 copy 列表加 `specs/`，属另一任务，未做也未要求做）。它工作区那批未提交改动（AGENTS.md/README.md/post-write.ts 等）是既有的，非本次产生。
+- **promote SOP §4.4 DoD 为硬门（D9，both）**：(a) 4 套 agent 的 `/implement` 命令改写——无粘贴绿色 `--test` 输出不许勾任务框，且要求 red-before-green + 测试文件红绿间逐字节不变；(b) `.wolf/hooks/post-test.js` 在 implement 阶段测红时把 active spec 标 `blocked`。**诚实边界**：`openwolf spec next` 自身不因 `blocked` 拒进（改它要 patch 全局二进制、每次 `openwolf update` 即丢），故 (b) 是持久标记、(a) 才是执行闸。
+- **9 个 spec**：8 个 retro（`specs/001-json` … `008-codegen-logic`，每个 seam 对应现有测试文件）+ 1 个 forward（`009-engine-integration`=S6，falsifiable 场景加载 bar）。中文叙事 + 英文标识符。`doc_ai/` 原样保留为设计档案。`009` 设 active、phase specify。
+- **遗留缺口（诚实记录，未粉饰）**：`json` 无直接测试文件，仅经 `scene_json` 间接覆盖——写进 `001-json` FR-003 标为待办。
+- **验证**：`openwolf spec list` 见全 9 个；`gdsl/test_gdsl.exe` 77 用例 / 319 断言全绿；STATUS.md drift guard 从警告转干净。
+- **决策**：D8（SDD 选 OpenWolf，测试硬门轴）、D9（DoD 双通道 promote + 已知限）、D10（一组件一 spec）。已回写 cerebrum Key Learnings + Decision Log + memory。
+
+---
+
+## Era 16 — 复盘：这 9 份 spec 到底是不是「LLM 友好」
+
+| ME | YOU |
+|---|---|
+| 「为什么要这么做？我不明白技术限制？gdsl 目标是什么？」 | 解释两层流水线 + 5 条技术限制（语言注册进不了 GDExtension、声明式走现成 loader、逻辑走 ptrcall 零装箱、emit_signal 哈希必须自算、JSON 校验不了 tscn）。gdsl 目标 = 让 LLM 写「配方」不是写「程序」，可校验 > 可表达。 |
+| 「review spec，true LLM friendly? why?」 | 诚实复盘：机制对、结论早。分两半说。 |
+
+- **对的一半（机制确实是 LLM 友好的正确杠杆）**：固定 effect ontology（005，LLM 不能发明符号）、reject-not-retry（002/004/006，把「幻觉→运行时崩」变成「编译错→改」）、确定性输出（003/008，格式化噪声无关）、小语法（004，可写错的空间小）。这四条是 PuzzleScript/VGDL 已验证的经验，不是拍脑袋。
+- **没证明的一半（claim 说早了）**：① ontology 覆盖边界是设计 §7 自称的「最大设计风险，不是技术风险」，无 spec 处理——固定 ontology 覆盖不了真实玩法规则，LLM 友好就落空；② .gdsl 零预训练数据，GDScript 有海量数据，「新语言靠 spec + few-shot 学得会」是经验命题，没测试；③ ScriptDoctor 的胜因是「编译错 + playtest 反馈」的**闭环**，我们只 spec 了编译器那一半（reject），playtest/反馈那一半缺席；④ 002 只校验结构不校验语义（引用不存在的节点照样能过）；⑤ 8/9 份 spec 讲的是实现，不是 LLM 面对的那个接口（语法、ontology 表、报错文案、few-shot 示例）。
+- **判决**：spec 证明的是「编译器正确」，不是「LLM 能用它做游戏」。两者不是一回事。「LLM 友好」实际断言的是后者，目前未证。补齐三件才算数：ontology 覆盖真实规则、有 playtest 反馈闭环、拿真 LLM 跑收敛测试。
+
+---
+
+## Era 17 — S6 真机集成：两个真 bug 修复，一个退出 segfault 未修
+
+| ME | YOU |
+|---|---|
+| （延续「拍最小可辩护 ontology 继续，不要停摆」+ route B 集成指令） | route B 真机跑通：`.gdsl` → 生成 C → `make_interface_header.py`/手写 stub 头 → `cl` 编 `.dll` → `.gdextension` manifest → 引擎加载。引擎二进制就位（`.godot-bin/`，已 gitignore），`--dump-extension-api` 对拍开始。 |
+| （未新增拍板，延续 D 系列决策） | **修掉两个真机 bug**：① emit_signal 兼容哈希 2866548813 → **4047867050**（根因：emit_signal 的 MethodInfo 有 Error 返回值，不是无返回；手写 mi 漏 return_val，`create_vararg_method_bind` 从 `_emit_signal` 签名推导 INT + class_name "Error"）。真机 `--dump-extension-api` 对拍验证。② `GDExtensionPropertyInfo.hint_string` 传 NULL → 引擎 PropertyInfo 构造（`property_info.h:168`）无条件解引用崩溃，改成指向零初始化 `gdsl_empty_string[8]`。效果：之前 "registering method on_hit" 一打印就崩，现在初始化阶段全部通过，加载完 scene 正常走完。 |
+
+- **事实锚点（两个已修 bug）**：`core/object/object.cpp:1866-1869`（emit_signal 手写 MethodInfo，1 个 STRING_NAME 参数、vararg）；`core/object/object.cpp:1151`（`_emit_signal` 返回 Error → `create_vararg_method_bind` 从签名推导 return type）；`core/variant/type_info.h:247-256`（MAKE_ENUM_TYPE_INFO(Error)：VARIANT_TYPE=INT、class_name="Error"）；`core/string/ustring.cpp:2755-2764`（String::hash = djb2，class_name 哈希用）；`core/object/property_info.h:163-170`（PropertyInfo(const GDExtensionPropertyInfo&) 无条件解引用 name/class_name/hint_string）。哈希从 0xAADC104D → 0xF1458CAA，钉进 `test_abihash.cpp`。
+- **还剩一个 bug（未修，如实说）**：退出阶段 segfault（EXIT 139）。规律：任何注册了方法（有 rule）的 GDExtension 退出时都崩，与 emit/target/connection/hint_string 都无关——一个只有 self 规则、无 emit 无 target 的最小样例也崩。位置在 "loading_editor_layout DONE" 之后、Godot crash handler 卸载之后，是 CRT 静态析构阶段的裸 segfault；cdb 下见 "Invalid parameter passed to C runtime function"。
+- **最可信假设（未证实）**：`GDExtensionMethodBind` 存着指向 DLL 里 call_func/ptrcall_func 的函数指针；若 DLL 在 `ClassDB::cleanup()`（`class_db.cpp:2350` memdelete 每个 method_map 里的 MethodBind）之前被卸载，这些 MethodBind 析构时（虚表/析构函数在已卸载内存里）悬空解引用。`GDExtensionManager` 在 `register_core_types.cpp:433` 被 memdelete，其析构才 `close_library` 卸载 DLL。
+- **证据缺口（诚实记录）**：cdb 在 harness 里反复卡住/超时，procdump 没抓到 dump（崩溃在进程 teardown 阶段），WER LocalDumps 也没落盘。所以没有真实调用栈，只有源码路径推理——栈没抓到就不能声称确定了根因。
+- **本轮纠错（我做的）**：把上一轮的一个坏修复还原了。曾为追 segfault 把信号名 StringName 的 `p_is_static` 从 `true` 改成 `false`（注释称「true 复用 DLL 字面量缓冲区 → cleanup 悬空」），但 `test_codegen.cpp:150` 仍断言 `true` → 单测其实红了（82/83），与「全绿」报告不符。对拍 `string_name.cpp:206-261` 证伪该注释：StringName 构造始终 `_data->name = p_name`（经 `String::operator=` → `append_latin1` **拷贝**），`p_static` 只影响 `static_count` 泄漏统计（`string_name.cpp:232,245`），不改变缓冲区归属；且 segfault 无 emit 也复现，故该改动不可能是根因。已还原 `true`、删除错误注释，恢复 83 用例 / 335 断言全绿。
+- **下一步（下一轮）**：用能跑出完整退出路径的方式抓崩溃栈——gflags `+hpa`（heap page alloc）配合 AEDebug，或把规则方法改成不依赖 DLL 卸载顺序的写法（不挂 ClassDB method_map，用 `GDExtensionClassCreationInfo6` 其他机制）。但这是架构判断，需先拿到栈再定，不猜。
 
 ---
 

@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[node name="Main" type="Node2D"]
+
+[node name="icon" type="Sprite2D" parent="."]
+position = Vector2(10, 20)
+
+[connection signal="hit" from="icon" to="Main" method="_on_icon_hit"]

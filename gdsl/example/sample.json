@@ -1,0 +1,9 @@
+{
+  "root": {"type": "Node2D", "name": "Main"},
+  "children": [
+    {"type": "Sprite2D", "name": "icon", "props": {"position": {"x": 10, "y": 20}}}
+  ],
+  "connections": [
+    {"signal": "hit", "from": "icon", "to": "Main", "method": "_on_icon_hit"}
+  ]
+}

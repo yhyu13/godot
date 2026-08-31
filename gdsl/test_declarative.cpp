@@ -109,3 +109,46 @@ TEST_CASE("[GDSL] End-to-end: scene JSON → tscn") {
 	CHECK(tscn.find("position = Vector2(10, 20)") != std::string::npos);
 	CHECK(tscn.find("[node name=\"icon\" type=\"Sprite2D\" parent=\".\"]") != std::string::npos);
 }
+
+TEST_CASE("[GDSL] Emit connection block in tscn") {
+	gdsl::SceneSpec spec;
+	spec.root.type = "Node2D";
+	spec.root.name = "Main";
+	gdsl::NodeSpec player;
+	player.type = "CharacterBody2D";
+	player.name = "Player";
+	spec.root.children.push_back(player);
+	gdsl::Connection c;
+	c.signal = "hit";
+	c.from = "Player";
+	c.to = "Main";
+	c.method = "_on_player_hit";
+	spec.connections.push_back(c);
+
+	const std::string out = gdsl::emit_tscn(spec);
+	CHECK(out.find("[connection signal=\"hit\" from=\"Player\" to=\"Main\" method=\"_on_player_hit\"]") != std::string::npos);
+}
+
+TEST_CASE("[GDSL] Parse a connection from scene JSON") {
+	gdsl::SceneSpec spec;
+	std::string err;
+	const std::string json =
+			"{\"root\":{\"type\":\"Node2D\",\"name\":\"Main\"},"
+			"\"connections\":[{\"signal\":\"hit\",\"from\":\"Main\",\"to\":\"Main\",\"method\":\"_on_hit\"}]}";
+	REQUIRE(gdsl::scene_from_json(json, spec, err));
+	REQUIRE(spec.connections.size() == 1);
+	CHECK(spec.connections[0].signal == "hit");
+	CHECK(spec.connections[0].from == "Main");
+	CHECK(spec.connections[0].to == "Main");
+	CHECK(spec.connections[0].method == "_on_hit");
+}
+
+TEST_CASE("[GDSL] Reject connection referencing a nonexistent node") {
+	gdsl::SceneSpec spec;
+	std::string err;
+	const std::string json =
+			"{\"root\":{\"type\":\"Node2D\",\"name\":\"Main\"},"
+			"\"connections\":[{\"signal\":\"hit\",\"from\":\"Ghost\",\"to\":\"Main\",\"method\":\"_on_hit\"}]}";
+	CHECK_FALSE(gdsl::scene_from_json(json, spec, err));
+	CHECK_FALSE(err.empty());
+}

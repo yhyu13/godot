@@ -227,3 +227,17 @@ TEST_CASE("[GDSL] Reject rule referencing unknown target field") {
 	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
 	CHECK_FALSE(err.empty());
 }
+
+TEST_CASE("[GDSL] Typecheck error names the offending symbol") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"\n"
+			"rule OnHit by Ghost:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	// FR-009：报错必须点名违规符号（Ghost），不是空泛的 "unknown type"。
+	CHECK(err.find("Ghost") != std::string::npos);
+}

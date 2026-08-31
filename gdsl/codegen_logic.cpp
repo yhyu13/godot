@@ -147,14 +147,21 @@ std::string emit_c(const TypedProgram &prog) {
 	// ---- StringName / Variant 占位 ----
 	out += "/* StringName opaque holder (64-bit build: 8 bytes). */\n";
 	out += "typedef struct {\n";
-	out += "\tuint8_t data[8];\n";
+	out += "	uint8_t data[8];\n";
 	out += "} gdsl_StringName;\n";
 	out += "\n";
 	out += "/* Variant opaque holder (single-precision 64-bit build: 24 bytes, 8-aligned). */\n";
 	out += "typedef union {\n";
-	out += "\tuint64_t align_;\n";
-	out += "\tuint8_t data[24];\n";
+	out += "	uint64_t align_;\n";
+	out += "	uint8_t data[24];\n";
 	out += "} gdsl_Variant;\n";
+	out += "\n";
+	// FR-004/009 真机崩溃根因：引擎 PropertyInfo(const GDExtensionPropertyInfo&)
+	// 无条件解引用 hint_string（core/object/property_info.h:168），传 NULL 必崩。
+	// String 是单指针成员（8 字节），零初始化即空字符串，COW 对 nullptr 安全。
+	out += "/* 空 String（8 字节零初始化 = 空字符串）。PropertyInfo 构造会解引用 hint_string，\n";
+	out += " * 不能传 NULL，故提供这个零初始化占位。 */\n";
+	out += "static uint8_t gdsl_empty_string[8] = { 0 };\n";
 	out += "\n";
 	out += "/* Object::emit_signal MethodBind，SCENE 初始化时缓存一次。 */\n";
 	out += "static GDExtensionMethodBindPtr gdsl_emit_signal_mb = NULL;\n";
@@ -330,7 +337,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "\t}\n";
 	// 缓存每个唯一信号名的 static StringName。
 	for (const std::string &sig : signal_names) {
-		out += "\tgdsl_string_name_new(&gdsl_signal_" + sig + ", \"" + sig + "\", true);\n";
+		out += "	gdsl_string_name_new(&gdsl_signal_" + sig + ", \"" + sig + "\", true);\n";
 	}
 	for (const TypedType &t : prog.types) {
 		const std::string pfx = fn_prefix(t.name);
@@ -368,7 +375,7 @@ std::string emit_c(const TypedProgram &prog) {
 				out += "			gdsl_string_name_new(&target_class_name, \"" + r.target + "\", false);\n";
 				out += "			arg_info[0].class_name = (GDExtensionStringNamePtr)&target_class_name;\n";
 				out += "			arg_info[0].hint = 0;\n";
-				out += "			arg_info[0].hint_string = NULL;\n";
+				out += "			arg_info[0].hint_string = (GDExtensionStringPtr)gdsl_empty_string;\n";
 				out += "			arg_info[0].usage = 0;\n";
 				out += "			GDExtensionClassMethodArgumentMetadata arg_meta[1];\n";
 				out += "			arg_meta[0] = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;\n";

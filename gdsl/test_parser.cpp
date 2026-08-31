@@ -247,3 +247,19 @@ TEST_CASE("[GDSL] Reject a program with an unexpected line") {
 	CHECK_FALSE(ok);
 	CHECK_FALSE(err.empty());
 }
+
+TEST_CASE("[GDSL] Parser error carries a line number") {
+	gdsl::Program prog;
+	std::string err;
+	// 错误在第 5 行（bogus line here）。
+	bool ok = gdsl::parse_program(
+			"type Player @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"bogus line here\n",
+			prog, err);
+	CHECK_FALSE(ok);
+	// 定位：err 含 "line 5"（FR-009：报错可定位）。
+	CHECK(err.find("line 5") != std::string::npos);
+}
