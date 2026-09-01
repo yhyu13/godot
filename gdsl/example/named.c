@@ -88,8 +88,6 @@ static GDExtensionInstanceBindingCallbacks gdsl_binding_callbacks = {
 	NULL /* reference_callback */
 };
 
-static gdsl_StringName gdsl_signal_hit;
-
 /* Emit a zero-arg signal named by a cached (static) StringName. */
 static void gdsl_emit_signal(GDExtensionObjectPtr p_object, gdsl_StringName *p_signal_name) {
 	if (gdsl_emit_signal_mb == NULL) {
@@ -178,10 +176,12 @@ static void player_set_hp_ptr(void *p_method_userdata, GDExtensionClassInstanceP
 typedef struct {
 	GDExtensionObjectPtr object;
 	int64_t damage;
+	Player * owner;
 } Bullet;
 
 static void bullet_constructor(Bullet *self) {
 	self->damage = 1;
+	self->owner = NULL;
 }
 
 static void bullet_destructor(Bullet *self) {
@@ -239,31 +239,35 @@ static void bullet_set_damage_ptr(void *p_method_userdata, GDExtensionClassInsta
 	self->damage = *(int64_t *)p_args[0];
 }
 
-/* ---- rule OnHit by Bullet target Player ---- */
-static void bullet_on_hit_impl(Bullet *self, GDExtensionObjectPtr p_target) {
-	Player *target = (Player *)gdsl_object_get_instance_binding(p_target, gdsl_library, &gdsl_binding_callbacks);
-	if (target == NULL) {
+static void bullet_get_owner_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Bullet *self = (Bullet *)p_instance;
+	if (self->owner == NULL) {
+		gdsl_variant_new_nil((GDExtensionUninitializedVariantPtr)r_return);
 		return;
 	}
-	if (!(target->hp > 0)) {
+	GDExtensionObjectPtr obj = self->owner->object;
+	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_OBJECT);
+	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&obj);
+}
+static void bullet_get_owner_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Bullet *self = (Bullet *)p_instance;
+	*(GDExtensionObjectPtr *)r_ret = (self->owner != NULL) ? self->owner->object : NULL;
+}
+static void bullet_set_owner_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Bullet *self = (Bullet *)p_instance;
+	if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) == GDEXTENSION_VARIANT_TYPE_NIL) {
+		self->owner = NULL;
 		return;
 	}
-	target->hp -= 1;
-	gdsl_emit_signal(self->object, &gdsl_signal_hit);
+	GDExtensionObjectPtr obj = NULL;
+	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_OBJECT);
+	to_type((GDExtensionUninitializedTypePtr)&obj, (GDExtensionVariantPtr)p_args[0]);
+	self->owner = (Player *)gdsl_object_get_instance_binding(obj, gdsl_library, &gdsl_binding_callbacks);
 }
-
-static void bullet_on_hit_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
-	GDExtensionObjectPtr p_target = NULL;
-	if (p_argument_count >= 1 && p_args != NULL) {
-		GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_OBJECT);
-		to_type((GDExtensionUninitializedTypePtr)&p_target, (GDExtensionVariantPtr)p_args[0]);
-	}
-	bullet_on_hit_impl((Bullet *)p_instance, p_target);
-}
-
-static void bullet_on_hit_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
-	GDExtensionObjectPtr p_target = (p_args != NULL) ? *(GDExtensionObjectPtr *)p_args[0] : NULL;
-	bullet_on_hit_impl((Bullet *)p_instance, p_target);
+static void bullet_set_owner_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Bullet *self = (Bullet *)p_instance;
+	GDExtensionObjectPtr obj = *(GDExtensionObjectPtr *)p_args[0];
+	self->owner = (obj != NULL) ? (Player *)gdsl_object_get_instance_binding(obj, gdsl_library, &gdsl_binding_callbacks) : NULL;
 }
 
 static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_level) {
@@ -277,7 +281,6 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		gdsl_string_name_new(&sn_emit_signal, "emit_signal", true);
 		gdsl_emit_signal_mb = gdsl_classdb_get_method_bind(&sn_Object, &sn_emit_signal, 4047867050);
 	}
-	gdsl_string_name_new(&gdsl_signal_hit, "hit", true);
 	{
 		gdsl_StringName class_name;
 		gdsl_StringName parent_name;
@@ -369,33 +372,6 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		class_info.recreate_instance_func = bullet_recreate_instance;
 		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);
 		{
-			gdsl_StringName method_name;
-			gdsl_string_name_new(&method_name, "on_hit", false);
-			GDExtensionClassMethodInfo method_info = { 0 };
-			method_info.name = (GDExtensionStringNamePtr)&method_name;
-			method_info.call_func = bullet_on_hit_call;
-			method_info.ptrcall_func = bullet_on_hit_ptr;
-			method_info.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
-			method_info.has_return_value = 0;
-			GDExtensionPropertyInfo arg_info[1];
-			gdsl_StringName arg_name;
-			gdsl_string_name_new(&arg_name, "target", false);
-			arg_info[0].type = GDEXTENSION_VARIANT_TYPE_OBJECT;
-			arg_info[0].name = (GDExtensionStringNamePtr)&arg_name;
-			gdsl_StringName target_class_name;
-			gdsl_string_name_new(&target_class_name, "Player", false);
-			arg_info[0].class_name = (GDExtensionStringNamePtr)&target_class_name;
-			arg_info[0].hint = 0;
-			arg_info[0].hint_string = (GDExtensionStringPtr)gdsl_empty_string;
-			arg_info[0].usage = 0;
-			GDExtensionClassMethodArgumentMetadata arg_meta[1];
-			arg_meta[0] = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;
-			method_info.argument_count = 1;
-			method_info.arguments_info = arg_info;
-			method_info.arguments_metadata = arg_meta;
-			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &method_info);
-		}
-		{
 			gdsl_StringName mn;
 			gdsl_string_name_new(&mn, "get_damage", false);
 			GDExtensionClassMethodInfo mi = { 0 };
@@ -455,6 +431,73 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 			gdsl_StringName pc;
 			gdsl_string_name_new(&pc, "", false);
 			pi.type = GDEXTENSION_VARIANT_TYPE_INT;
+			pi.name = (GDExtensionStringNamePtr)&pn;
+			pi.class_name = (GDExtensionStringNamePtr)&pc;
+			pi.hint = 0;
+			pi.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			pi.usage = 2; /* PROPERTY_USAGE_STORAGE */
+			gdsl_classdb_register_extension_class_property(gdsl_library, &class_name, &pi, &sn, &gn);
+		}
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "get_owner", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = bullet_get_owner_call;
+			mi.ptrcall_func = bullet_get_owner_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 1;
+			GDExtensionPropertyInfo ri;
+			gdsl_StringName rn;
+			gdsl_string_name_new(&rn, "", false);
+			gdsl_StringName rc;
+			gdsl_string_name_new(&rc, "Player", false);
+			ri.type = GDEXTENSION_VARIANT_TYPE_OBJECT;
+			ri.name = (GDExtensionStringNamePtr)&rn;
+			ri.class_name = (GDExtensionStringNamePtr)&rc;
+			ri.hint = 0;
+			ri.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ri.usage = 0;
+			mi.return_value_info = &ri;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "set_owner", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = bullet_set_owner_call;
+			mi.ptrcall_func = bullet_set_owner_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 0;
+			GDExtensionPropertyInfo ai;
+			gdsl_StringName an;
+			gdsl_string_name_new(&an, "value", false);
+			gdsl_StringName ac;
+			gdsl_string_name_new(&ac, "Player", false);
+			ai.type = GDEXTENSION_VARIANT_TYPE_OBJECT;
+			ai.name = (GDExtensionStringNamePtr)&an;
+			ai.class_name = (GDExtensionStringNamePtr)&ac;
+			ai.hint = 0;
+			ai.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ai.usage = 0;
+			GDExtensionClassMethodArgumentMetadata am = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;
+			mi.argument_count = 1;
+			mi.arguments_info = &ai;
+			mi.arguments_metadata = &am;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName pn;
+			gdsl_string_name_new(&pn, "owner", false);
+			gdsl_StringName sn;
+			gdsl_string_name_new(&sn, "set_owner", false);
+			gdsl_StringName gn;
+			gdsl_string_name_new(&gn, "get_owner", false);
+			GDExtensionPropertyInfo pi;
+			gdsl_StringName pc;
+			gdsl_string_name_new(&pc, "Player", false);
+			pi.type = GDEXTENSION_VARIANT_TYPE_OBJECT;
 			pi.name = (GDExtensionStringNamePtr)&pn;
 			pi.class_name = (GDExtensionStringNamePtr)&pc;
 			pi.hint = 0;

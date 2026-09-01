@@ -132,6 +132,8 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "static GDExtensionInterfaceObjectMethodBindCall gdsl_object_method_bind_call;\n";
 	out += "static GDExtensionInterfaceGetVariantFromTypeConstructor gdsl_get_variant_from_type_constructor;\n";
 	out += "static GDExtensionInterfaceVariantDestroy gdsl_variant_destroy;\n";
+	out += "static GDExtensionInterfaceVariantNewNil gdsl_variant_new_nil;\n";
+	out += "static GDExtensionInterfaceVariantGetType gdsl_variant_get_type;\n";
 	out += "static GDExtensionInterfaceObjectSetInstanceBinding gdsl_object_set_instance_binding;\n";
 	out += "static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_binding;\n";
 	out += "static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;\n";
@@ -150,6 +152,8 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "\tgdsl_object_method_bind_call = (GDExtensionInterfaceObjectMethodBindCall)p_get_proc_address(\"object_method_bind_call\");\n";
 	out += "\tgdsl_get_variant_from_type_constructor = (GDExtensionInterfaceGetVariantFromTypeConstructor)p_get_proc_address(\"get_variant_from_type_constructor\");\n";
 	out += "	gdsl_variant_destroy = (GDExtensionInterfaceVariantDestroy)p_get_proc_address(\"variant_destroy\");\n";
+	out += "	gdsl_variant_new_nil = (GDExtensionInterfaceVariantNewNil)p_get_proc_address(\"variant_new_nil\");\n";
+	out += "	gdsl_variant_get_type = (GDExtensionInterfaceVariantGetType)p_get_proc_address(\"variant_get_type\");\n";
 	out += "	gdsl_object_set_instance_binding = (GDExtensionInterfaceObjectSetInstanceBinding)p_get_proc_address(\"object_set_instance_binding\");\n";
 	out += "	gdsl_object_get_instance_binding = (GDExtensionInterfaceObjectGetInstanceBinding)p_get_proc_address(\"object_get_instance_binding\");\n";
 	out += "	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address(\"get_variant_to_type_constructor\");\n";
@@ -283,6 +287,44 @@ std::string emit_c(const TypedProgram &prog) {
 		// Godot's property system — prepare_reload saves via get, finish_reload restores
 		// via set). Only scalar types for now; Named/String are handled separately.
 		for (const TypedField &f : t.fields) {
+			// Named field (object reference): marshal as OBJECT, resolve via instance binding.
+			if (f.type == ValueType::Named) {
+				const std::string getter = pfx + "_get_" + f.name;
+				const std::string setter = pfx + "_set_" + f.name;
+				const std::string ty = f.type_name;
+				out += "static void " + getter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	if (self->" + f.name + " == NULL) {\n";
+				out += "		gdsl_variant_new_nil((GDExtensionUninitializedVariantPtr)r_return);\n";
+				out += "		return;\n";
+				out += "	}\n";
+				out += "	GDExtensionObjectPtr obj = self->" + f.name + "->object;\n";
+				out += "	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_OBJECT);\n";
+				out += "	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&obj);\n";
+				out += "}\n";
+				out += "static void " + getter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	*(GDExtensionObjectPtr *)r_ret = (self->" + f.name + " != NULL) ? self->" + f.name + "->object : NULL;\n";
+				out += "}\n";
+				out += "static void " + setter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) == GDEXTENSION_VARIANT_TYPE_NIL) {\n";
+				out += "		self->" + f.name + " = NULL;\n";
+				out += "		return;\n";
+				out += "	}\n";
+				out += "	GDExtensionObjectPtr obj = NULL;\n";
+				out += "	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_OBJECT);\n";
+				out += "	to_type((GDExtensionUninitializedTypePtr)&obj, (GDExtensionVariantPtr)p_args[0]);\n";
+				out += "	self->" + f.name + " = (" + ty + " *)gdsl_object_get_instance_binding(obj, gdsl_library, &gdsl_binding_callbacks);\n";
+				out += "}\n";
+				out += "static void " + setter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	GDExtensionObjectPtr obj = *(GDExtensionObjectPtr *)p_args[0];\n";
+				out += "	self->" + f.name + " = (obj != NULL) ? (" + ty + " *)gdsl_object_get_instance_binding(obj, gdsl_library, &gdsl_binding_callbacks) : NULL;\n";
+				out += "}\n";
+				out += "\n";
+				continue;
+			}
 			const char *vt = variant_type(f.type);
 			if (!vt) {
 				continue;
@@ -448,9 +490,18 @@ std::string emit_c(const TypedProgram &prog) {
 		// getter/setter + property registration for state fields (hot-reload state
 		// preservation: prepare_reload saves via get, finish_reload restores via set).
 		for (const TypedField &f : t.fields) {
-			const char *vt = variant_type(f.type);
-			if (!vt) {
-				continue;
+			std::string vtype;
+			std::string clsname;
+			if (f.type == ValueType::Named) {
+				vtype = "GDEXTENSION_VARIANT_TYPE_OBJECT";
+				clsname = f.type_name;
+			} else {
+				const char *vt = variant_type(f.type);
+				if (!vt) {
+					continue;
+				}
+				vtype = vt;
+				clsname = "";
 			}
 			const std::string getter = pfx + "_get_" + f.name;
 			const std::string setter = pfx + "_set_" + f.name;
@@ -468,8 +519,8 @@ std::string emit_c(const TypedProgram &prog) {
 			out += "			gdsl_StringName rn;\n";
 			out += "			gdsl_string_name_new(&rn, \"\", false);\n";
 			out += "			gdsl_StringName rc;\n";
-			out += "			gdsl_string_name_new(&rc, \"\", false);\n";
-			out += "			ri.type = " + std::string(vt) + ";\n";
+			out += "			gdsl_string_name_new(&rc, \"" + clsname + "\", false);\n";
+			out += "			ri.type = " + vtype + ";\n";
 			out += "			ri.name = (GDExtensionStringNamePtr)&rn;\n";
 			out += "			ri.class_name = (GDExtensionStringNamePtr)&rc;\n";
 			out += "			ri.hint = 0;\n";
@@ -492,8 +543,8 @@ std::string emit_c(const TypedProgram &prog) {
 			out += "			gdsl_StringName an;\n";
 			out += "			gdsl_string_name_new(&an, \"value\", false);\n";
 			out += "			gdsl_StringName ac;\n";
-			out += "			gdsl_string_name_new(&ac, \"\", false);\n";
-			out += "			ai.type = " + std::string(vt) + ";\n";
+			out += "			gdsl_string_name_new(&ac, \"" + clsname + "\", false);\n";
+			out += "			ai.type = " + vtype + ";\n";
 			out += "			ai.name = (GDExtensionStringNamePtr)&an;\n";
 			out += "			ai.class_name = (GDExtensionStringNamePtr)&ac;\n";
 			out += "			ai.hint = 0;\n";
@@ -515,8 +566,8 @@ std::string emit_c(const TypedProgram &prog) {
 			out += "			gdsl_string_name_new(&gn, \"get_" + f.name + "\", false);\n";
 			out += "			GDExtensionPropertyInfo pi;\n";
 			out += "			gdsl_StringName pc;\n";
-			out += "			gdsl_string_name_new(&pc, \"\", false);\n";
-			out += "			pi.type = " + std::string(vt) + ";\n";
+			out += "			gdsl_string_name_new(&pc, \"" + clsname + "\", false);\n";
+			out += "			pi.type = " + vtype + ";\n";
 			out += "			pi.name = (GDExtensionStringNamePtr)&pn;\n";
 			out += "			pi.class_name = (GDExtensionStringNamePtr)&pc;\n";
 			out += "			pi.hint = 0;\n";

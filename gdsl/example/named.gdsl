@@ -1,0 +1,8 @@
+type Player @extends Node2D
+state:
+    hp: int = 3
+
+type Bullet @extends Area2D
+state:
+    damage: int = 1
+    owner: Player = null
