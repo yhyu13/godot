@@ -106,8 +106,8 @@ bool parse_state_field(const std::string &line, FieldDecl &out, std::string &err
 	return true;
 }
 
-// 内部实现带 line_offset（块在程序里的起始行，0-based），避免双重前缀。
-static bool parse_type_block_at(const std::string &text, TypeDecl &out, std::string &err, size_t line_offset) {
+// 解析 type 块；line_offset = 块首行在源程序里的 0-based 起始行号，供 FR-009 报错定位。
+bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err, size_t line_offset) {
 	const std::vector<std::string> lines = split_lines(text);
 	size_t i = 0;
 	while (i < lines.size() && trim(lines[i]).empty()) {
@@ -153,11 +153,8 @@ static bool parse_type_block_at(const std::string &text, TypeDecl &out, std::str
 	return true;
 }
 
-bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err) {
-	return parse_type_block_at(text, out, err, 0);
-}
-
-static bool parse_rule_block_at(const std::string &text, RuleDecl &out, std::string &err, size_t line_offset) {
+// 解析 rule 块；line_offset = 块首行在源程序里的 0-based 起始行号，供 FR-009 报错定位。
+bool parse_rule_block(const std::string &text, RuleDecl &out, std::string &err, size_t line_offset) {
 	const std::vector<std::string> lines = split_lines(text);
 	size_t i = 0;
 	while (i < lines.size() && trim(lines[i]).empty()) {
@@ -262,10 +259,6 @@ static bool parse_rule_block_at(const std::string &text, RuleDecl &out, std::str
 	return true;
 }
 
-bool parse_rule_block(const std::string &text, RuleDecl &out, std::string &err) {
-	return parse_rule_block_at(text, out, err, 0);
-}
-
 bool parse_program(const std::string &source, Program &out, std::string &err) {
 	const std::vector<std::string> lines = split_lines(source);
 	out.types.clear();
@@ -299,13 +292,13 @@ bool parse_program(const std::string &source, Program &out, std::string &err) {
 		}
 		if (is_type) {
 			TypeDecl t;
-			if (!parse_type_block_at(block, t, err, i)) {
+			if (!parse_type_block(block, t, err, i)) {
 				return false;
 			}
 			out.types.push_back(t);
 		} else {
 			RuleDecl r;
-			if (!parse_rule_block_at(block, r, err, i)) {
+			if (!parse_rule_block(block, r, err, i)) {
 				return false;
 			}
 			out.rules.push_back(r);

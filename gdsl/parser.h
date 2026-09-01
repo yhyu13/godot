@@ -38,10 +38,12 @@ bool parse_type_decl(const std::string &line, TypeDecl &out, std::string &err);
 bool parse_state_field(const std::string &line, FieldDecl &out, std::string &err);
 
 // 解析多行 type 块："type Name @extends Base" + 可选 "state:" 字段列表。
-bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err);
+// line_offset = 块首行在源程序里的 0-based 起始行号，仅供 FR-009 报错定位；独立调用默认 0。
+bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err, size_t line_offset = 0);
 
 // 解析多行 rule 块："rule Name by Source:" + "when guard" + "then effects"。
-bool parse_rule_block(const std::string &text, RuleDecl &out, std::string &err);
+// line_offset 语义同 parse_type_block。
+bool parse_rule_block(const std::string &text, RuleDecl &out, std::string &err, size_t line_offset = 0);
 
 // 解析整个 .gdsl 源文本（多个 type/rule 块）→ Program AST。
 bool parse_program(const std::string &source, Program &out, std::string &err);
