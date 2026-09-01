@@ -2,7 +2,7 @@
 
 > 本文件记录「人怎么决策、纠正、砍方向」与「AI 怎么执行、证伪、诚实报告」的时间线。
 > 列名：`ME = 用户`，`YOU = AI`。日期格式 `YYYY-MM-DD`。
-> 当前阶段：**S6 真机集成进行中**（route B 跑通：`.gdsl` → 生成 C → `cl` 编 `.dll` → `.gdextension` manifest → 引擎加载）。本阶段修掉两个真机 bug（emit_signal 兼容哈希 + hint_string NULL 崩溃），83 用例 / 335 断言全绿；**还剩一个退出阶段 segfault（EXIT 139）未修**——任何注册了方法的 GDExtension 退出时都崩，根因假设（DLL 卸载顺序 vs MethodBind 悬空指针）已提出但无符号栈证实。
+> 当前阶段：**S6 真机集成进行中 + segfault lane 收尾（2026-09-01）**：route B 已跑通（`.gdsl` → 生成 C → `cl` 编 `.dll` → `.gdextension` → 引擎加载）；两个真机 bug（emit_signal 兼容哈希 + hint_string NULL 崩溃）已修；**退出阶段 segfault 已确认修复**——五样例（self_rule/target_only/emit_only/combo/minimal）在官方 rc3 与 fork release-editor 构建上 plain-exit 全 exit 0；unload→free 崩确认为非 editor 模式 artifact（非引擎 bug）。下一步：009 引擎集成完整验收 + 010 LLM 度量（FR-006/007/008）。
 
 ## 风险与待办（roll-up，非替换——各时代的行内风险/待办仍在原表里）
 
@@ -12,7 +12,7 @@
 - **[Era 4·OpenWolf] anatomy.md 对 C++ 文件价值低**：`file_count=513, hits=0`，多数描述只是版权首行（如把 `CLAUDE.md` 标成「OpenWolf」）。RISK：agent 依赖 anatomy 描述会读到无意义文本。
 - **[Era 2-3·AGENTS] 两份指令文件会漂移**：`AGENTS.md`（紧凑）与 `CLAUDE.md`（更详）内容重叠（构建/测试/架构/贡献约定）。TODO：后续改动若只更新一份，另一份会过期。
 - **[Era 8·push] `.wolf/` 运行时状态文件被提交进 git**：`hippocampus.json`/`token-ledger.json`/`_scan-state.json` 等含机器绝对路径 `D:\GitRepo-My\godot`，会随每次会话变化产生提交噪声。待确认：是否给 `.gitignore` 加规则排除。
-- **[Era 17·真机集成] 退出阶段 segfault（EXIT 139）未修**：任何注册了方法的 GDExtension 退出时都崩，最小 self-only 规则也崩。最可信假设（未证实）：GDExtensionMethodBind 存着指向 DLL 的 call_func/ptrcall_func 函数指针，DLL 在 `ClassDB::cleanup()`（`class_db.cpp:2350` memdelete MethodBind）之前被 `close_library` 卸载 → MethodBind 析构时悬空解引用。证据缺口：cdb 卡住/超时、procdump 抓不到（崩溃在 teardown）、WER LocalDumps 没落盘——无真实调用栈，只有源码路径推理。
+- **[Era 17·真机集成] 退出阶段 segfault（EXIT 139）：已修复（2026-09-01 验证）**：普通退出（加载含方法 GDExtension + 退出）在官方 rc3（`.godot-bin/`）与 fork release-editor 构建上都 exit 0；五样例双引擎连跑全过（见 Era 23）。根因 = 引擎卸载顺序错位（GDExtension 对象先于 ObjectDB/ClassDB cleanup 销毁，存活实例的 `free_instance_func` 悬空进已卸载 DLL）；修复本体 = 54864dd（`_unregister_extension_class` 无条件 `_clear_extension`，`gdextension.cpp:744`）。
 
 ---
 
@@ -415,3 +415,67 @@
 5. **追踪器要对账地面真值**：自治 agent 的追踪器会漂移——我最初写「145 / modules 58」，实际是 144 / 57，靠 INDEX vs 文件系统对账抓出来。不能只信自己的 tracker（Era 7 对账）。
 6. **并行 >> 串行 cron**：按「每 5 分钟 1 个」串行要约 12 小时；14 批并行 64 分钟跑完，约 11 倍加速。7×24 的价值在吞吐，不在「定时」（Era 7 耗时）。
 7. **人干「立契约 + 事后核账」，不盯每个 agent**：我的杠杆在前期（追踪器 + 契约 + cron 任务）和事后（对账计数、抽查质量），中间 14 批是 fire-and-forget 等通知（Era 7 全程）。**
+
+---
+
+## Era 26 — Review 复盘：把 GDSL 四问沉淀进仓库（decision + 外部 commit 事件）
+
+> 任务：复盘「我们从 GDSL 开发学到什么 / 如何设计 LLM 友好 DSL / 如何让 agent 持续自治跑 8 小时 / 如何跟 Godot 快速正确地 SDD-TDD」，并把可复用的要点落进 repo。下面是「四问该进哪层」的判断、真实交付、以及一个**不是我发起的、把 WIP 混打包的外部 commit**——如实记录，不粉饰。
+
+### 四问 → 该落哪层（判断，不是流水账）
+
+| 问 | 现状 | 该进哪 | 本轮动作 |
+|---|---|---|---|
+| 2. LLM 友好 DSL | 已齐全：spec `010-llm-interface` + `doc_ai/GODOT_LLM_DSL_DESIGN.md` + `LLM_UNFRIENDLY_DESIGNS.md`(8条) + `LLM_READABILITY_AUDIT.md` | 无 | **不加**（重复） |
+| 4. SDD/TDD 快速正确 | 已齐全：`doc_ai/SOP_TDD_AI_TESTING.md`（law/metric/morality、seam卡、DoD §4.4、anti-drift §4.5） | 无 | **不加**（重复） |
+| 1. GDSL 学到什么 | 工程教训，在 `.wolf/cerebrum.md`（Decision Log + Do-Not-Repeat） | cerebrum，**不是** AGENTS | 属"怎么干活"，不进 AGENTS |
+| 3. agent 持续/自治跑8h | **唯一真缺口**：只在 JOURNEY Era 7 叙事段 | 新建 doc + AGENTS 薄入口 | **补** |
+
+**关键判断：AGENTS.md/CLAUDE.md 不该装方法论。** 它们的定位被 Era 2/5 钉死——"每行都是 agent 不看会踩坑的可核事实"，terse。方法论的教训是"该怎么干活"，不是"会猜错的事实"，塞进去毁契约。真正的缺口不是"经验没写全"，是 **`doc_ai/` 和 `specs/` 成了孤儿**——AGENTS/CLAUDE 对它们零引用，文档写好了却没入口引导"下次该先读哪个"。
+
+### 最终交付（全部 verified）
+
+- **新建 `doc_ai/GDSL_LONG_RUN.md`**（problem 3）：把 Era 7 的「契约+状态+可恢复」三件套 + PLAN_GDSL_8H 的 Gate 收口 + 两条硬禁令（没对照不定 fix / 没栈不写 fix）+ anti-drift + 并行>>串行，写成可复读规则。
+- **`AGENTS.md`**（59→73 行，+14）：① 新增「GDSL / LLM-DSL project (spec-first, in-repo docs)」指针段，把 specs/、DESIGN、SOP_TDD、GDSL_LONG_RUN、.wolf/STATUS 接进每次会话视野；② Contribution rules 新增一条 **law**："Never claim a crash root cause without a symbolicated stack"。
+- **`CLAUDE.md`**（90→101 行，+11）：同款短指针段。
+- **`.wolf/OPENWOLF.md`**：Code Generation 段加第 4 条——长时间自治会话先读 `doc_ai/GDSL_LONG_RUN.md`。
+
+**为何只升格一条 law？** 那条 crash 根因 law 在你项目里**摔过一次**（cerebrum `[2026-08-31]`：凭源码推理改 `p_is_static`，两处皆错还打红 test_codegen 82/83），是"可证伪、反例即违约"的料。其余（并行、契约在共享文件）是"怎么干活"，留在 doc_ai 不进 AGENTS——AGENTS 门面越窄越值。
+
+### 过程中的一次自我纠偏（行尾误判）
+
+曾以为 CLAUDE.md 的 CRLF 是"行尾不一致要修正"，要动手规范化。核实后是**误判**：`.gitattributes` 第 7 行 `* text=auto eol=lf`（仓库存储=LF），`core.autocrlf=true`（Windows 工作区 checkout=CRLF），工作区显示 CRLF 是这台机器的常态（CONTRIBUTING.md 同），git 的 warning 是常规提示。**已撤销 staging，未动行尾，无实际损害。**
+
+### 外部 commit 事件（不是我发起的，如实记录）
+
+本轮跑最后一次 `git status --short` 时发现工作区变"clean"——**同一个仓库里发生了一个不是我做、也不是我该负责的 commit**：
+
+```
+c0dc917  GDSL: Checkpoint WIP (LLM harness, playtest, Gap B, string test, docs)
+author yhxd123  Tue Sep 1 18:41:26 2026 +0800
+```
+
+这个 checkpoint 把我本轮 4 个文件（AGENTS.md、CLAUDE.md、.wolf/OPENWOLF.md、doc_ai/GDSL_LONG_RUN.md）**和大量无关的会话前 WIP**（LLM harness `llm_conv_bench.py`、`playtest_cases/*`、Gap B `godot_classes.h`、`string_test/*`、`test_typecheck.cpp` 等几十个文件）一次打包提交。
+
+- **我的 4 文件全在 c0dc917 里、内容无损**（逐项 grep 验证）。
+- **按用户纪律这是不该提交的**：010 度量还是 Draft、009 还是 Draft、segfault 还没拿到栈——属"未完成周期"，按"失败/阻塞的周期不得建 commit"应 hold。且把 WIP 与文档改动混在一个 commit，破坏了可追溯性。
+- **给用户的选项（未执行）**：①不动它（默认，内容在）；②拆分重写历史（动已有 commit，除非明确要不做）；③扫 c0dc917 全清单查敏感文件混入。用户选了 dump 到 journey，拆分/扫敏感未决定。
+
+**教训**：本会话做了 3 处写（AGENTS/CLAUDE/OPENWOLF）+ 1 处新建（GDSL_LONG_RUN），全程未跑 `git commit`，但工作区最终被一个外部 checkpoint 收走——在有多个并发会话/守护进程共用一个 repo 时，**工作区状态不能假设稳定**，`git status` 会反映的是最终静默 commit 后的状态。下次把"交付"与"落盘"分开判断：文件内容在即交付完成，commit 归属另说。
+
+---
+
+## Era 23 — segfault lane 收尾：确认修复 + unload→free 是 artifact + 五条验收全过
+
+| ME | YOU |
+|---|---|
+| 「segfault lane done 了吗 100%？」「这个是需求吗」「update journey」 | 读 `gdextension.cpp:738-744` + 源码链；双引擎实测五样例；新增验收脚本；确认「运行期卸载」非需求。 |
+
+- **退出阶段 segfault（普通退出）确认修复**：最小复现（加载含方法 GDExtension + 退出）在官方 rc3（`.godot-bin/`）与 fork release-editor 构建上都 exit 0，self_rule 各 5/5；再用 `gdsl/toolchain/verify_plain_exit.sh` 把五样例（self_rule/target_only/emit_only/combo/minimal）双引擎全测，逐一 exit 0。Era 21 五条验收信号全部达成（①最小复现 3-5 次稳 ✓ ②五样例全退净 ✓ ③根因链源码钉死+机制栈在边界崩拿到 ✓ ④架构级修法非绕过 ✓ ⑤可复现脚本断言 exit 0 进 repo ✓）。
+- **unload→free 崩溃 = 非 editor 模式 artifact（修正早前误判）**：早前我预告「带 54864dd 修复仍崩」**是错的**——那是 `--headless --path`（非 editor）跑出的假崩溃。链：`main.cpp:2222-2224`（reloadable 仅 editor 开）→ `gdextension_library_loader.cpp:217`（reloadable = manifest && editor）→ `gdextension.cpp:557-560`（track 关闭）→ `instances` 空 → `_clear_extension`(:744) 清空气 → `p.free()` 撞已卸载 DLL。不是引擎 bug，是「运行期卸载含活实例的扩展」这个用法反模式。
+- **「运行期卸载扩展安全」不是需求**：`specs/` 全搜 `unload`/`卸载`/`热重载` 0 命中；`doc_ai/` 里的「卸载/热重载」只指①引擎关机卸载顺序 bug（已修）②editor 开发期热重载（Direction 1-5，已工作）。GDSL 游戏路径 = DLL 启动加载、全程驻留，不卸载。真要「运行中换扩展」= 新需求/功能变更。
+- **产出**：`gdsl/toolchain/repro_unload_crash.ps1`（复现 artifact、供源码链验证）、`gdsl/toolchain/verify_plain_exit.sh`（断言五样例 exit 0，验收信号#5）、`doc_ai/SEGFAULT_UNLOAD_REPRO.md`（发现+修正）、`.wolf/STATUS.md` 同步。
+- **提交**：`83b7cd0`（segfault 文档+脚本）、`fca7e7e`（verify_plain_exit.sh）、`c0dc917`（WIP checkpoint：LLM harness/playtest/Gap B/string test/docs，用户「all」指令下打包，含其他会话 WIP——见上方「外部 commit 事件」备注）、`54864dd`（引擎修复，早期）。
+- **诚实边界**：③「带符号栈」非「抓到已修复崩溃的栈」（已不崩），而是根因链源码钉死 + 机制栈在非 editor 边界崩拿到；editor 模式 unload 未当场实测（headless editor 挂起未完成），靠源码链 + Era 20「编辑器 3x 干净」佐证；WIP checkpoint（c0dc917）里 LLM harness 等未经我逐项验证，未作功能背书。
+- **下一步**：010 LLM 接口度量（FR-006/007/008 harness，目前空）、009 完整验收（节点/连接数==配方 + rule effect 经 ptrcall 生效可观测）、Gap B（ClassDB 名表，`gdsl/godot_classes.h` 已生成待接入）。
+
