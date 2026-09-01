@@ -232,3 +232,13 @@ TEST_CASE("[GDSL] Emit cross-participant target codegen is deterministic") {
 			"    then target.hp -= 1\n");
 	CHECK(gdsl::emit_c(typed) == gdsl::emit_c(typed));
 }
+
+TEST_CASE("[GDSL] Emit schema-safe setter (type-check before marshal)") {
+	const gdsl::TypedProgram typed = typed_program(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n");
+	const std::string c = gdsl::emit_c(typed);
+	// 标量 setter 在封送前检查 Variant 类型：LLM 改字段类型后，旧状态类型不匹配就跳过，不污染默认值。
+	CHECK(c.find("if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != GDEXTENSION_VARIANT_TYPE_INT) {") != std::string::npos);
+}

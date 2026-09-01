@@ -343,6 +343,9 @@ std::string emit_c(const TypedProgram &prog) {
 			out += "}\n";
 			out += "static void " + setter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
 			out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+			out += "	if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != " + std::string(vt) + ") {\n";
+			out += "		return;\n";
+			out += "	}\n";
 			out += "	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(" + std::string(vt) + ");\n";
 			out += "	to_type((GDExtensionUninitializedTypePtr)&self->" + f.name + ", (GDExtensionVariantPtr)p_args[0]);\n";
 			out += "}\n";

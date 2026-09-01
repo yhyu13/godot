@@ -164,6 +164,9 @@ static void player_get_hp_ptr(void *p_method_userdata, GDExtensionClassInstanceP
 }
 static void player_set_hp_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
 	Player *self = (Player *)p_instance;
+	if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != GDEXTENSION_VARIANT_TYPE_INT) {
+		return;
+	}
 	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_INT);
 	to_type((GDExtensionUninitializedTypePtr)&self->hp, (GDExtensionVariantPtr)p_args[0]);
 }
