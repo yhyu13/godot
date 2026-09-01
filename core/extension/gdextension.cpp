@@ -737,9 +737,11 @@ void GDExtension::_unregister_extension_class(GDExtensionClassLibraryPtr p_libra
 
 	Extension *ext = &self->extension_classes[class_name];
 #ifdef TOOLS_ENABLED
-	if (ext->is_reloading) {
-		self->_clear_extension(ext);
-	}
+	// Clear extension data on all live instances whenever a class is unregistered —
+	// on reload this converts them to placeholders, and on normal shutdown it frees
+	// them so their _extension / _gdtype_ptr don't dangle into freed memory at exit
+	// (godotengine/godot#98182, #95306).
+	self->_clear_extension(ext);
 #endif
 	ERR_FAIL_COND_MSG(ext->gdextension.children.size(), vformat("Attempt to unregister class '%s' while other extension classes inherit from it.", class_name));
 

@@ -125,6 +125,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "static GDExtensionInterfaceObjectSetInstanceBinding gdsl_object_set_instance_binding;\n";
 	out += "static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_binding;\n";
 	out += "static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;\n";
+	out += "static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;\n";
 	out += "\n";
 	out += "static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {\n";
 	out += "\tgdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address(\"string_name_new_with_latin1_chars\");\n";
@@ -141,6 +142,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "	gdsl_object_set_instance_binding = (GDExtensionInterfaceObjectSetInstanceBinding)p_get_proc_address(\"object_set_instance_binding\");\n";
 	out += "	gdsl_object_get_instance_binding = (GDExtensionInterfaceObjectGetInstanceBinding)p_get_proc_address(\"object_get_instance_binding\");\n";
 	out += "	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address(\"get_variant_to_type_constructor\");\n";
+	out += "	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address(\"classdb_unregister_extension_class\");\n";
 	out += "}\n";
 	out += "\n";
 
@@ -246,12 +248,23 @@ std::string emit_c(const TypedProgram &prog) {
 		out += "}\n";
 		out += "\n";
 		out += "static void " + pfx + "_free_instance(void *p_class_userdata, GDExtensionClassInstancePtr p_instance) {\n";
-		out += "\tif (p_instance == NULL) {\n";
-		out += "\t\treturn;\n";
-		out += "\t}\n";
-		out += "\t" + t.name + " *self = (" + t.name + " *)p_instance;\n";
-		out += "\t" + pfx + "_destructor(self);\n";
-		out += "\tgdsl_mem_free(self);\n";
+		out += "	if (p_instance == NULL) {\n";
+		out += "		return;\n";
+		out += "	}\n";
+		out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+		out += "	" + pfx + "_destructor(self);\n";
+		out += "	gdsl_mem_free(self);\n";
+		out += "}\n";
+		out += "\n";
+		// Hot-reload support (required for the extension to be marked reloadable, which
+		// enables instance tracking so the engine can clear dangling _extension pointers
+		// on leaked instances at shutdown — godotengine/godot#98182).
+		out += "static GDExtensionClassInstancePtr " + pfx + "_recreate_instance(void *p_class_userdata, GDExtensionObjectPtr p_object) {\n";
+		out += "	" + t.name + " *self = (" + t.name + " *)gdsl_mem_alloc(sizeof(" + t.name + "));\n";
+		out += "	" + pfx + "_constructor(self);\n";
+		out += "	self->object = p_object;\n";
+		out += "	gdsl_object_set_instance_binding(p_object, gdsl_library, self, &gdsl_binding_callbacks);\n";
+		out += "	return (GDExtensionClassInstancePtr)self;\n";
 		out += "}\n";
 		out += "\n";
 	}
@@ -348,8 +361,9 @@ std::string emit_c(const TypedProgram &prog) {
 		out += "\t\tgdsl_string_name_new(&parent_name, \"" + t.base + "\", false);\n";
 		out += "\t\tGDExtensionClassCreationInfo6 class_info = { 0 };\n";
 		out += "\t\tclass_info.is_exposed = 1;\n";
-		out += "\t\tclass_info.create_instance_func = " + pfx + "_create_instance;\n";
-		out += "\t\tclass_info.free_instance_func = " + pfx + "_free_instance;\n";
+		out += "		class_info.create_instance_func = " + pfx + "_create_instance;\n";
+		out += "		class_info.free_instance_func = " + pfx + "_free_instance;\n";
+		out += "		class_info.recreate_instance_func = " + pfx + "_recreate_instance;\n";
 		out += "\t\tgdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);\n";
 		for (const TypedRule &r : prog.rules) {
 			if (r.by != t.name) {
@@ -393,9 +407,19 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "}\n";
 	out += "\n";
 	out += "static void gdsl_deinitialize(void *p_userdata, GDExtensionInitializationLevel p_level) {\n";
-	out += "\tif (p_level != GDEXTENSION_INITIALIZATION_SCENE) {\n";
-	out += "\t\treturn;\n";
-	out += "\t}\n";
+	out += "	if (p_level != GDEXTENSION_INITIALIZATION_SCENE) {\n";
+	out += "		return;\n";
+	out += "	}\n";
+	// Unregister classes in reverse order (inheritors before parents) so hot-reload
+	// can convert live instances to placeholders and back.
+	for (size_t i = prog.types.size(); i-- > 0;) {
+		const TypedType &t = prog.types[i];
+		out += "	{\n";
+		out += "		gdsl_StringName unreg_name;\n";
+		out += "		gdsl_string_name_new(&unreg_name, \"" + t.name + "\", false);\n";
+		out += "		gdsl_classdb_unregister_extension_class(gdsl_library, &unreg_name);\n";
+		out += "	}\n";
+	}
 	out += "}\n";
 	out += "\n";
 	out += "GDExtensionBool GDE_EXPORT gdsl_library_init(GDExtensionInterfaceGetProcAddress p_get_proc_address, GDExtensionClassLibraryPtr p_library, GDExtensionInitialization *r_initialization) {\n";

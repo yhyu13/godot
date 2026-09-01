@@ -31,6 +31,7 @@ static GDExtensionInterfaceVariantDestroy gdsl_variant_destroy;
 static GDExtensionInterfaceObjectSetInstanceBinding gdsl_object_set_instance_binding;
 static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_binding;
 static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;
+static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;
 
 static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {
 	gdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address("string_name_new_with_latin1_chars");
@@ -47,6 +48,7 @@ static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address)
 	gdsl_object_set_instance_binding = (GDExtensionInterfaceObjectSetInstanceBinding)p_get_proc_address("object_set_instance_binding");
 	gdsl_object_get_instance_binding = (GDExtensionInterfaceObjectGetInstanceBinding)p_get_proc_address("object_get_instance_binding");
 	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address("get_variant_to_type_constructor");
+	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address("classdb_unregister_extension_class");
 }
 
 /* StringName opaque holder (64-bit build: 8 bytes). */
@@ -139,6 +141,14 @@ static void player_free_instance(void *p_class_userdata, GDExtensionClassInstanc
 	gdsl_mem_free(self);
 }
 
+static GDExtensionClassInstancePtr player_recreate_instance(void *p_class_userdata, GDExtensionObjectPtr p_object) {
+	Player *self = (Player *)gdsl_mem_alloc(sizeof(Player));
+	player_constructor(self);
+	self->object = p_object;
+	gdsl_object_set_instance_binding(p_object, gdsl_library, self, &gdsl_binding_callbacks);
+	return (GDExtensionClassInstancePtr)self;
+}
+
 /* ---- type Bullet @extends Area2D ---- */
 typedef struct {
 	GDExtensionObjectPtr object;
@@ -175,6 +185,14 @@ static void bullet_free_instance(void *p_class_userdata, GDExtensionClassInstanc
 	Bullet *self = (Bullet *)p_instance;
 	bullet_destructor(self);
 	gdsl_mem_free(self);
+}
+
+static GDExtensionClassInstancePtr bullet_recreate_instance(void *p_class_userdata, GDExtensionObjectPtr p_object) {
+	Bullet *self = (Bullet *)gdsl_mem_alloc(sizeof(Bullet));
+	bullet_constructor(self);
+	self->object = p_object;
+	gdsl_object_set_instance_binding(p_object, gdsl_library, self, &gdsl_binding_callbacks);
+	return (GDExtensionClassInstancePtr)self;
 }
 
 /* ---- rule OnHit by Bullet target Player ---- */
@@ -225,6 +243,7 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		class_info.is_exposed = 1;
 		class_info.create_instance_func = player_create_instance;
 		class_info.free_instance_func = player_free_instance;
+		class_info.recreate_instance_func = player_recreate_instance;
 		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);
 	}
 	{
@@ -236,6 +255,7 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		class_info.is_exposed = 1;
 		class_info.create_instance_func = bullet_create_instance;
 		class_info.free_instance_func = bullet_free_instance;
+		class_info.recreate_instance_func = bullet_recreate_instance;
 		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);
 		{
 			gdsl_StringName method_name;
@@ -270,6 +290,16 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 static void gdsl_deinitialize(void *p_userdata, GDExtensionInitializationLevel p_level) {
 	if (p_level != GDEXTENSION_INITIALIZATION_SCENE) {
 		return;
+	}
+	{
+		gdsl_StringName unreg_name;
+		gdsl_string_name_new(&unreg_name, "Bullet", false);
+		gdsl_classdb_unregister_extension_class(gdsl_library, &unreg_name);
+	}
+	{
+		gdsl_StringName unreg_name;
+		gdsl_string_name_new(&unreg_name, "Player", false);
+		gdsl_classdb_unregister_extension_class(gdsl_library, &unreg_name);
 	}
 }
 
