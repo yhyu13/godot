@@ -64,6 +64,18 @@ The LLM-friendly DSL work lives **completely inside this fork** — its design, 
 
 The GDSL kernel is a **standalone** C++17 tree (`gdsl/`) with its own doctest harness — `cd gdsl && powershell -File test.ps1` runs the whole suite in seconds. **Do not rebuild the engine to test `gdsl/`**; engine integration is only slice S6/`009`.
 
+## Parallel agent work (this repo)
+
+This repo has a heavy C++ build and a large tree. **Never use git worktrees here — the cost explodes.** Each worktree needs its own full `scons` editor build (15–45 min and several GB in `bin/`, plus its own `compile_commands.json`). Don't create one to isolate file edits, and don't create one to isolate a build — it is never worth it here.
+
+Instead:
+
+- Each parallel agent owns a disjoint set of paths (file-ownership partitioning). The layered architecture plus the isolated `gdsl/` tree make this easy — `gdsl/*`, `specs/*`, `doc_ai/*`, `.wolf/*` are separable and rarely collide.
+- Never `git add -A`; stage only the exact files you own.
+- Commits are the orchestrator's job. Workers generally do not commit; a successful, reviewed cycle may get a reviewed local commit only on explicit authorization. If a worker would need an independent commit, it waits and hands off — never sweeps another agent's staged changes into its own commit.
+- Only slice `009` needs an engine build; every other `gdsl/` slice runs the `test.ps1` harness in seconds. Do not trigger `scons` for them.
+- If two agents would genuinely need the engine build at once, serialize it — one engine build at a time, and sequence the `scons`-requiring slice after the others. Never run concurrent `scons` in this repo.
+
 <!-- openwolf:begin -->
 # OpenWolf
 

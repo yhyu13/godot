@@ -1,0 +1,9 @@
+type Player @extends CharacterBody2D
+    state:
+        hp: int = 10
+    rule Heal by Player:
+        when self.hp < 10
+        then self.hp += 2
+    rule TakeDamage by Player:
+        when self.hp > 5
+        then self.hp -= 1

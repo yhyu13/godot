@@ -24,6 +24,7 @@
 - **测试**：83 用例 / 335 断言全绿；harness `gdsl/test.ps1` 13 文件（6 test + 7 源）
 - **S6.3 真机集成 bug 修复（两个）**：① emit_signal 兼容哈希 **2866548813 → 4047867050 (0xF1458CAA)**——根因是 emit_signal 的 MethodInfo 有 Error 返回值（`object.cpp:1151` `_emit_signal` 返回 Error → `create_vararg_method_bind` 从签名推导 return type INT + class_name "Error"，`type_info.h:247-256`），手写 mi（`object.cpp:1866`）漏 return_val 导致哈希错 → `classdb_get_method_bind` 返 nullptr。真机 `--dump-extension-api` 对拍验证。② `GDExtensionPropertyInfo.hint_string` 传 NULL → 引擎 `PropertyInfo(const GDExtensionPropertyInfo&)`（`property_info.h:168`）无条件解引用崩溃；改成指向零初始化 `gdsl_empty_string[8]`。route B 真机跑通：`.gdsl` → 生成 C → `cl` 编 `.dll` → `.gdextension` → 引擎加载，初始化阶段全部通过。
 - **退出阶段 segfault（EXIT 139）确认修复（2026-09-01 实测）**：最小复现（加载含方法 GDExtension + 退出）在官方 rc3（`.godot-bin/`）与 fork release-editor 构建上都 exit 0（各 5/5 连跑）。修复本体 = 54864dd（`_unregister_extension_class` 无条件 `_clear_extension`，`gdextension.cpp:744`）。
+- **TASTE SCORE（2026-09-01 新增）**：`doc_ai/TSCORE.md` 标准 + `gdsl/toolchain/tscore.py` scorer（秒级、无 LLM、无引擎）。基线 T=97.8（C/V/E=1.0 饱和，Q=0.889 唯一区分度）。诚实的下一步：加难任务集重启 C/E、建 mutation harness 测 V（FR-005）。
 - **unload→free 崩溃 = 非 editor 模式 artifact（2026-09-01 修正）**：早前误判「带修复仍崩」——实为 `--headless --path`（非 editor）跑出。链：`main.cpp:2222-2224` reloadable 仅 editor 开启 → `loader:217` reloadable=false → `gdextension.cpp:557-560` 追踪关闭 → `instances` 空 → `_clear_extension`(:744) 清空气 → `p.free()` 撞已卸载 DLL。非引擎 bug，勿作验收。记录 `doc_ai/SEGFAULT_UNLOAD_REPRO.md`、复现 `gdsl/toolchain/repro_unload_crash.ps1`。
 
 ---

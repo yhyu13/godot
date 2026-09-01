@@ -1,0 +1,7 @@
+type Hero @extends Node2D
+    state:
+        nickname: string = "hero"
+        hp: int = 3
+    rule Hurt by Hero:
+        when self.hp > 0
+        then self.hp -= 1

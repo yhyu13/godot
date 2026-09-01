@@ -96,6 +96,32 @@ static std::vector<std::string> collect_signal_names(const TypedProgram &prog) {
 	return names;
 }
 
+// 收集某类型名（规则 owner）触发的所有 emit 信号名（去重，保持首次出现顺序，确定性）。
+static std::vector<std::string> collect_class_signals(const TypedProgram &prog, const std::string &type_name) {
+	std::vector<std::string> names;
+	for (const TypedRule &r : prog.rules) {
+		if (r.by != type_name) {
+			continue;
+		}
+		for (const Effect &fx : r.effects) {
+			if (fx.kind != EffectKind::Emit) {
+				continue;
+			}
+			bool seen = false;
+			for (const std::string &n : names) {
+				if (n == fx.signal_name) {
+					seen = true;
+					break;
+				}
+			}
+			if (!seen) {
+				names.push_back(fx.signal_name);
+			}
+		}
+	}
+	return names;
+}
+
 std::string emit_c(const TypedProgram &prog) {
 	std::string out;
 	const std::vector<std::string> signal_names = collect_signal_names(prog);
@@ -141,6 +167,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;\n";
 	out += "static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;\n";
 	out += "static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;\n";
+	out += "static GDExtensionInterfaceClassdbRegisterExtensionClassSignal gdsl_classdb_register_extension_class_signal;\n";
 	out += "static GDExtensionInterfaceStringNewWithUtf8Chars gdsl_string_new;\n";
 	out += "static GDExtensionInterfaceStringToUtf8Chars gdsl_string_to_utf8_chars;\n";
 	out += "\n";
@@ -163,6 +190,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address(\"get_variant_to_type_constructor\");\n";
 	out += "	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address(\"classdb_unregister_extension_class\");\n";
 	out += "	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address(\"classdb_register_extension_class_property\");\n";
+	out += "	gdsl_classdb_register_extension_class_signal = (GDExtensionInterfaceClassdbRegisterExtensionClassSignal)p_get_proc_address(\"classdb_register_extension_class_signal\");\n";
 	out += "	gdsl_string_new = (GDExtensionInterfaceStringNewWithUtf8Chars)p_get_proc_address(\"string_new_with_utf8_chars\");\n";
 	out += "	gdsl_string_to_utf8_chars = (GDExtensionInterfaceStringToUtf8Chars)p_get_proc_address(\"string_to_utf8_chars\");\n";
 	out += "}\n";
@@ -523,7 +551,15 @@ std::string emit_c(const TypedProgram &prog) {
 		out += "		class_info.create_instance_func = " + pfx + "_create_instance;\n";
 		out += "		class_info.free_instance_func = " + pfx + "_free_instance;\n";
 		out += "		class_info.recreate_instance_func = " + pfx + "_recreate_instance;\n";
-		out += "\t\tgdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);\n";
+		out += "		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);\n";
+		// 注册本类声明的信号（emit(<sig>) 的类上声明该信号，Godot 才能 connect 收）。
+		for (const std::string &sig : collect_class_signals(prog, t.name)) {
+			out += "		{\n";
+			out += "			gdsl_StringName sig_name;\n";
+			out += "			gdsl_string_name_new(&sig_name, \"" + sig + "\", false);\n";
+			out += "			gdsl_classdb_register_extension_class_signal(gdsl_library, &class_name, &sig_name, NULL, 0);\n";
+			out += "		}\n";
+		}
 		for (const TypedRule &r : prog.rules) {
 			if (r.by != t.name) {
 				continue;

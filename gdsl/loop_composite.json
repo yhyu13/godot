@@ -1,0 +1,36 @@
+[
+  {
+    "task": "multi_rule_self",
+    "k": 0,
+    "converged": true,
+    "cycles": 1,
+    "log": [
+      {
+        "cycle": 1,
+        "stage": "playtest",
+        "ok": true,
+        "fails": [],
+        "output": "Godot Engine v4.7.rc3.official.645638db9 - https://godotengine.org\n\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | Started 项目初始化 (5 steps)\u001b[39m\u001b[0m\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在扫描文件结构……\u001b[39m\u001b[0m\n[  16% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在加载全局类名……\u001b[39m\u001b[0m\n[  33% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在校验 GDExtension……\u001b[39m\u001b[0m\n[  50% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在创建自动加载脚本……\u001b[39m\u001b[0m\nPASS multi_rule_self/Heal\nPASS multi_rule_self/TakeDamage\nRESULT ALLPASS\n[  66% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在初始化插件……\u001b[39m\u001b[0m\n[  83% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在启动文件扫描……\u001b[39m\u001b[0m\n\u001b[92m[ DONE ]\u001b[39m \u001b[1mfirst_scan_filesystem\u001b[22m\n\u001b[0m\nWARNING: Scan thread aborted...\n   at: _notification (editor/file_system/editor_file_system.cpp:1757)\n"
+      }
+    ],
+    "gsdl": "type Player @extends CharacterBody2D\n    state:\n        hp: int = 10\n    rule Heal by Player:\n        when self.hp < 10\n        then self.hp += 2\n    rule TakeDamage by Player:\n        when self.hp > 5\n        then self.hp -= 1",
+    "cost": 0.18056500000000003
+  },
+  {
+    "task": "two_types_cross",
+    "k": 0,
+    "converged": true,
+    "cycles": 1,
+    "log": [
+      {
+        "cycle": 1,
+        "stage": "playtest",
+        "ok": true,
+        "fails": [],
+        "output": "Godot Engine v4.7.rc3.official.645638db9 - https://godotengine.org\n\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | Started 项目初始化 (5 steps)\u001b[39m\u001b[0m\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在扫描文件结构……\u001b[39m\u001b[0m\n[  16% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在加载全局类名……\u001b[39m\u001b[0m\n[  33% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在校验 GDExtension……\u001b[39m\u001b[0m\n[  50% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在创建自动加载脚本……\u001b[39m\u001b[0m\nPASS two_types_cross/Fade\nPASS two_types_cross/OnHit\nRESULT ALLPASS\n[  66% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在初始化插件……\u001b[39m\u001b[0m\n[  83% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在启动文件扫描……\u001b[39m\u001b[0m\n\u001b[92m[ DONE ]\u001b[39m \u001b[1mfirst_scan_filesystem\u001b[22m\n\u001b[0m\nWARNING: Scan thread aborted...\n   at: _notification (editor/file_system/editor_file_system.cpp:1757)\n"
+      }
+    ],
+    "gsdl": "type Bullet @extends Area2D\n    state:\n        damage: int = 1\n    rule Fade by Bullet:\n        when self.damage > 0\n        then self.damage -= 1\n\ntype Player @extends CharacterBody2D\n    state:\n        hp: int = 5\n    rule OnHit by Bullet target Player:\n        when target.hp > 0\n        then target.hp -= 1, emit(hit)",
+    "cost": 0.17873
+  }
+]

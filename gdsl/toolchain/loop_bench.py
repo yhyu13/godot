@@ -23,28 +23,35 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import llm_conv_bench as llm
 import gdsl_playgen as playgen
+import golden as gold
 import playtest as pt
 
 REPO = llm.REPO
 
 
-def run_playtest(gdsl_text, stem):
-    """gdsl_text -> playtest 输出（含 PASS/FAIL/RESULT 行）。返回 (output, err)."""
-    with tempfile.TemporaryDirectory(prefix="gdslloop_") as wd:
+def run_playtest(gdsl_text, stem, task_name=None):
+    """gdsl_text -> playtest 输出（含 PASS/FAIL/RESULT 行）。返回 (output, err).
+
+    若任务有金标准（golden），用 gold.gen_golden_playtest_gd 生成「对着金标准断言」的脚本；
+    否则回落到 playgen 的「读配方 effect」脚本（循环论证，抓不到写反）。"""
+    with tempfile.TemporaryDirectory(prefix="gdslloop_", ignore_cleanup_errors=True) as wd:
         gdsl_path = os.path.join(wd, stem + ".gdsl")
         with open(gdsl_path, "w", encoding="utf-8") as f:
             f.write(gdsl_text)
         dll_path, err = pt.build_dll(gdsl_path, wd)
         if err:
             return None, err
-        # 写 manifest + project + 自动生成的 playtest.gd
+        # 写 manifest + project + playtest.gd
         with open(os.path.join(wd, stem + ".gdextension"), "w") as f:
             f.write("[configuration]\n\nentry_symbol = \"gdsl_library_init\"\ncompatibility_minimum = \"4.7\"\n"
                     "reloadable = true\n\n[libraries]\n\nwindows.x86_64 = \"res://%s.dll\"\n" % stem)
         with open(os.path.join(wd, "project.godot"), "w") as f:
             f.write('config_version=5\n\n[application]\n\nconfig/name="gdsl playtest"\n'
                     'config/features=PackedStringArray("4.7")\n\n[autoload]\n\nPT="*res://playtest.gd"\n')
-        gd = playgen.gen_playtest_gd(gdsl_text)
+        if task_name and task_name in gold.GOLDEN:
+            gd = gold.gen_golden_playtest_gd(gdsl_text, task_name)
+        else:
+            gd = playgen.gen_playtest_gd(gdsl_text)
         with open(os.path.join(wd, "playtest.gd"), "w") as f:
             f.write(gd)
         out = pt.run_engine(wd)
@@ -64,8 +71,8 @@ def converge(task, k, max_cycles):
             log.append({"cycle": cyc, "stage": "compile", "ok": False, "err": perr})
             prompt += "\n\n你上一次输出未通过编译校验：\n%s\n请修正并只重新输出完整 .gdsl。\n" % perr
             continue
-        # 编译有效 → playtest
-        pot, perr = run_playtest(gsdl, "loop")
+        # 编译有效 → playtest（有金标准则对着金标准断言，抓「写反」；否则读配方 effect）
+        pot, perr = run_playtest(gsdl, "loop", task["name"])
         if pot is None:
             log.append({"cycle": cyc, "stage": "playtest", "ok": False, "err": perr[:300]})
             prompt += "\n\n你上一次配方编译通过但无法构建/运行：\n%s\n请修正并重新输出。\n" % perr
@@ -90,9 +97,15 @@ def main():
     ap.add_argument("--tasks", type=int, default=2)
     ap.add_argument("--ks", default="0")
     ap.add_argument("--max-cycles", type=int, default=3)
+    ap.add_argument("--only", default="", help="comma-separated task names to run")
     ap.add_argument("--json", default=os.path.join(REPO, "gdsl", "loop_results.json"))
     args = ap.parse_args()
-    tasks = llm.TASKS[:args.tasks]
+    tasks = llm.TASKS
+    if args.only:
+        want = [x.strip() for x in args.only.split(",") if x.strip()]
+        tasks = [t for t in tasks if t["name"] in want]
+    else:
+        tasks = tasks[:args.tasks]
     ks = [int(x) for x in args.ks.split(",")]
     t0 = time.time()
     results = []

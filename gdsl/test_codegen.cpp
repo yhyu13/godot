@@ -304,3 +304,21 @@ TEST_CASE("[GDSL] Signal-name StringName is static-once (no per-emit creation, n
 	CHECK(c.find("string_name_destroy") == std::string::npos);
 }
 
+TEST_CASE("[GDSL] Emit codegen registers the signal on the class (so connect can receive it)") {
+	const gdsl::TypedProgram typed = typed_program(
+			"type Player @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Die by Player:\n"
+			"    when self.hp <= 0\n"
+			"    then emit(died)\n");
+	const std::string c = gdsl::emit_c(typed);
+	// 每个 emit(<sig>) 在所属类上注册该信号（classdb_register_extension_class_signal），Godot 才能 connect 收。
+	CHECK(c.find("gdsl_string_name_new(&sig_name, \"died\", false);") != std::string::npos);
+	CHECK(c.find("gdsl_classdb_register_extension_class_signal(gdsl_library, &class_name, &sig_name, NULL, 0);") != std::string::npos);
+	// API 缓存 + load。
+	CHECK(c.find("static GDExtensionInterfaceClassdbRegisterExtensionClassSignal gdsl_classdb_register_extension_class_signal;") != std::string::npos);
+	CHECK(c.find("(GDExtensionInterfaceClassdbRegisterExtensionClassSignal)p_get_proc_address(\"classdb_register_extension_class_signal\")") != std::string::npos);
+}
+

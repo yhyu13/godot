@@ -378,6 +378,36 @@
 - **产出**：A=`llm_conv_bench.py`（+复合任务）+`bench_results.json`；B=`gdsl/toolchain/playtest.py` + `gdsl/playtest_cases/{basic_int,float_accel,target_emit}.gdsl|.gd`（3 个真机断言样例）。
 - **闭环收尾（loop_bench.py）**：把 playtest 接进 LLM 循环 —— `converge()` 每 cycle：LLM 产出 → `gdslc` 编译 → 自动生成 playtest .gd（`gdsl_playgen.py` 从配方解析 type/rule/guard/effect）→ 真引擎跑 → `RESULT ALLPASS` 才算收敛，否则把 FAIL 行回喂。实测 **basic_int + float_accel 各在 1 cycle 收敛**（compile 失败=0、playtest 失败=0），wall 84s、~$0.42。**完整闭环连上了：LLM 写对 → 编译过 → 引擎里规则真的执行 → 收敛**。
 - **loop 的 honest 边界（重要）**：自动 playtest 是**「规则自身 effect 是否真的执行」校验器**——生成器会强制满足 guard（把 guard 字段设到满足比较的值），所以只要 codegen 正确它就恒 PASS。它**不校验「规则是否符合 prose spec」**（那需要 per-task 期望值；3 个 sampled 配方我已人工核实语义 on-target）。FAIL→fix 分支只在 codegen/运行时 bug 时触发（当前 codegen 正确 → 不触发）。所以这环是「确认配方真的跑对」的验证器，不是「捉语义错」的抓虫器。
+- **方向 2 语义对 spec 金标准（golden.py）**——补上「抓 LLM 写反了」：金标准 = 每个任务一组 `{rule, setup_owner/setup_target, expect_owner/expect_target}`（人类定义的「正确行为」），playtest 对着**金标准**断言，而不是对着配方自己写的 effect（后者是循环论证，`+=1` 写成 `-=1` 也过）。**证明**：正确配方 basic_int → `RESULT ALLPASS`；故意写反的配方（`+=1` 而非 `-=1`，编译有效但语义错）→ `FAIL Player.hp expected 4 got 6` + `RESULT SOME_FAIL`——**写反被抓出来了**。已把 golden 接进 loop_bench 的 `run_playtest`（任务有金标准就用它，无则回落）。
+- **meta 教训（shuorenhua 的「别把没跑的当跑过」在此应验）**：做 golden 时连续 3 次引擎 240s 超时——根因不是引擎，是我生成的 GDScript 在 `_ready()` 里**重复 `var` 声明**（每 scenario 重声明 `owner`/`scenario_ok`）→ GDScript 解析错 → autoload 的 _ready 不跑 → 永不 quit → 超时。**修法**：变量声明一次、每 scenario 赋值（`owner = X.new()`）。教训：写入引擎的生成代码要先静态查 `var` 重声明，别再烧 240s 才定位。
+- **「all」补完（金标准扩 8 + 语义闭环证明）**：金标准扩到**全部 8 任务**（string_name 用 `__default__` 场景断言默认状态；multi_rule_self / two_types_cross 各 2 场景）。**8/8 正确配方 → 引擎实测全 `RESULT ALLPASS`**（basic_int/float_accel/string_name/target_emit/multi_rule_self/float_emit/string_with_rule/two_types_cross）。**语义闭环证明（semfix_loop.py）**：故意逆向的配方（`+=1` 该是 `-=1`，编译有效但语义错）→ 金标准 `FAIL Player.hp expected 4 got 6` → 把这条 FAIL 喂回 LLM → **LLM 翻回 `-=1`** → 金标准 `ALLPASS` → `SEMFIX LOOP PASSED`。**FR-011 最后一缺补齐：写错被抓 + LLM 从语义反馈改对。**
+- **再一个 GDScript 生成坑（字符串）**：golden 值 `"hero"` 拼进 GDScript 必须要加引号变 `"hero"`，否则当标识符 → 解析错；且 FAIL 打印信息**不能**把值嵌进双引号字符串（内层 `"` 没转义 → 解析错 → autoload 不跑 → 挂）。**修法**：`print("FAIL", "X.y", "expected", "hero", "got", ...)`——值当独立参数，不用 `%` 内插。生成 GDScript 时值一律当参数、别内插进引号字符串。
+
+## Era 26 — 009 场景加载接受（FR-003 基础版）
+
+| ME | YOU |
+|---|---|
+| 「009 can go」 | 建 `gdsl/toolchain/scene_accept.py`：配方 → DLL → 自动生成 .tscn（每个 type 一个节点）→ 真引擎加载 → 断言节点数/类/默认状态/规则在场景树触发。 |
+
+- **结果（真引擎）**：`basic_int` 单类型 → `CHILD_COUNT=1`、`NODE0_CLASS=Player`、`STATE hp=3`、`RULE take_damage RULE_APPLIED=true`、`RESULT ACCEPT`。`two_types_cross` 双类型 → `CHILD_COUNT=2`（Bullet+Player）、各自默认状态对、`RULE fade RULE_APPLIED=true`、`RESULT ACCEPT`。
+- **意义**：009 的**场景加载接受**（FR-003：配方类型能在真场景实例化、类/状态对、规则在场景树里触发）成立——这是"做得出游戏"的第一关。区别于 playtest（孤立 `new()`），这用 `load(tscn) + instantiate + add_child` 进真实场景树。
+- **009 还剩（诚实）**：① TC-5 跨实体——`OnHit`(target Player) 规则通过**场景**里 bullet 节点命中 player 节点触发（现在只测了 self 规则 Fade）；② TC-6 信号可观察——`emit(hit)` 被场景连接收到；③ TC-7 生命周期——场景里增删实体无泄漏/双释放；④ TC-8 游戏轨迹——N tick 到终点态；⑤ **声明式路径**——FR-003 用 `scene_from_json(JSON→tscn)`，现在我是从配方类型自动生成了简单 tscn，还没走 JSON 场景 spec + 连线/定位。
+- **TC-5 已过（跨实体场景触发）**：scene_accept 扩到测 target 规则——two_types_cross 里 `c0(Bullet).on_hit(c1(Player))` 在**场景树**里触发 → `TARGET_RULE Player.hp before=5 after=4 applied=true`、RESULT ACCEPT。游戏最核心的"实体互动"(子弹节点命中玩家节点)在真场景里成立。
+- **TC-6 已过（信号可观察）**：codegen_logic 加 `classdb_register_extension_class_signal`——每个 `emit(<sig>)` 在所属类上声明该信号（零参数）。真机：`HAS_SIGNAL=true`（类声明了 hit）+ `b.hit.connect(_on_hit)` + `on_hit(player)` → `SIGNAL_FIRED=true`。**emit 信号现在能被 connect 收到**（之前只能 emit，connect 会因未声明报错）。
+- **009 还差**：TC-7 生命周期、TC-8 游戏轨迹、声明式 JSON→tscn 路径（scene_accept 现在自动生成简单 tscn，没走 JSON spec + 连线）。TC-5/6 让"实体互动+信号"在真场景成立，TC-7/8 是"完整玩一盘"的最后一关。
+- **TC-7 + TC-8 已过（生命周期 + 游戏轨迹）**：`scene_lifecycle.py`——真机 `TC8_END hp=0 dead=true signal=3`（3 次命中把玩家打到死、hit 信号发了 3 次）+ `RESULT DONE`（增删一个实体再释放整个场景，无 ObjectDB 泄漏警告、退出干净）。**009 的 falsifiable 场景条 TC-1..8 全过**：加载/类/状态/规则(1-4)、跨实体(5)、信号(6)、生命周期(7)、游戏轨迹(8)。
+- **009 真剩余（唯一未验）**：**声明式 `scene_from_json(JSON→tscn)` 路径**——这是 S2 声明式层（JSON 场景 spec → tscn），单元测试已覆盖 emit_tscn 输出，但没做「声明式产出的 tscn 真的在引擎里加载」的验证；且它跟逻辑层（配方→DLL 类）是两个子系统，scene_accept 是直接从配方类型手生成 tscn（一个能 load 的真场景）。若要把「配方↔声明式」接起来（recipe→JSON spec→tscn），是 S2 集成活，非 009 falsifiable bar 的一环。
+- **声明式路径已接引擎（009 关口全闭）**：`decl_scene.json`（Bullet/Player/props）→ `gdslc scene` → `emit_tscn` 产出 `[gd_scene format=3]` + 节点 + 连接 → 放进带 target_emit 扩展的隔离项目 → 真机加载：`BUL_CLASS=Bullet`、`PRP_BUL_DMG=2`、`PRP_PLY_HP=10`——**声明式 tscn 的 gdsl 类 `type`+props 真的实例化/应用**（Godot 自动加载项目内 .gdextension，故 type=类名可解析）。**设计边界（诚实）**：declarative 层的 `connection {signal,from,to,method}` 的 `method` 是 GDScript 风格（如 `_on_hit`），而 gdsl 类只暴露注册的规则方法 + 信号、没有任意 handler 方法——所以「连接指向 gdsl 类的方法」会因方法不存在而连不上；连接真正适合指向原生/GDScript 节点。
+
+## Era 27 — gdsl 全链路闭环 + 自治配置
+
+| ME | YOU |
+|---|---|
+| 「怎么做完所有了」「为什么你停」「加自动运行能力」「update to journey and push」 | ① 补齐 009 声明式路径引擎验证（全链路闭）；② 回答「为什么停」：把 loop 的 per-round gate 当成硬停点 + 钱 + 套用 lane 边界 + 要许可的习惯——全是可改的行为，非技术瓶颈；③ 加自治能力：`approvals.mode` 由 `manual` 改 `smart`（Hermes 配置，真正去掉 60s consent 拦阻），`hermes chat -q` 是不用 cron 的 one-shot 自治运行；④ 记这条「lane 内直接做完再报，真判断才问」。 |
+
+- **gdsl 全链路（NOW 全通，每环真证据）**：编译器(97/403 单测)→ 热重载(D5)→ Gap A/B → LLM 友好(010 16/16)→ 语义金标准(8/8+抓写反)→ 语义回喂修复(semfix)→ 009 场景 TC-1..8 → 声明式 JSON→tscn 真机加载。「做得出游戏」（能写出可编译、可跑、语义对、能玩到终点的配方）实证成立。
+- **唯一剩下的增量**：把整套工具链（llm_conv_bench/playtest/golden/semfix_loop/scene_accept/scene_lifecycle + GDScript 生成坑）沉淀成一个可复用 Hermes skill，供别的引擎 DSL 复用这套「编译→真跑→语义→回喂→场景」闭环。
+- **自治教训（写死）**：小步、lane 内、有合理默认 → 直接做完再报，别用 `clarify` 停；只有真做不到/真判断（如金标准语义）才问。`approvals.mode` 是 Hermes 层的拦阻源，不是行为约束。
 
 ### 人的工作（decide, correct, kill）
 

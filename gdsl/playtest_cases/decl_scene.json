@@ -1,0 +1,10 @@
+{
+  "root": {"type": "Node2D", "name": "Root"},
+  "children": [
+    {"type": "Bullet", "name": "Bullet", "props": {"damage": 2}},
+    {"type": "Player", "name": "Player", "props": {"hp": 10}}
+  ],
+  "connections": [
+    {"signal": "hit", "from": "Bullet", "to": "Player", "method": "_on_hit"}
+  ]
+}

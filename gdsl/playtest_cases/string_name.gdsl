@@ -1,0 +1,4 @@
+type Hero @extends Node2D
+    state:
+        nickname: string = "hero"
+        hp: int = 3

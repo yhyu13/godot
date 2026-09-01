@@ -35,6 +35,7 @@ static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_bin
 static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;
 static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;
 static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;
+static GDExtensionInterfaceClassdbRegisterExtensionClassSignal gdsl_classdb_register_extension_class_signal;
 static GDExtensionInterfaceStringNewWithUtf8Chars gdsl_string_new;
 static GDExtensionInterfaceStringToUtf8Chars gdsl_string_to_utf8_chars;
 
@@ -57,6 +58,7 @@ static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address)
 	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address("get_variant_to_type_constructor");
 	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address("classdb_unregister_extension_class");
 	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address("classdb_register_extension_class_property");
+	gdsl_classdb_register_extension_class_signal = (GDExtensionInterfaceClassdbRegisterExtensionClassSignal)p_get_proc_address("classdb_register_extension_class_signal");
 	gdsl_string_new = (GDExtensionInterfaceStringNewWithUtf8Chars)p_get_proc_address("string_new_with_utf8_chars");
 	gdsl_string_to_utf8_chars = (GDExtensionInterfaceStringToUtf8Chars)p_get_proc_address("string_to_utf8_chars");
 }
@@ -226,6 +228,11 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		class_info.free_instance_func = player_free_instance;
 		class_info.recreate_instance_func = player_recreate_instance;
 		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);
+		{
+			gdsl_StringName sig_name;
+			gdsl_string_name_new(&sig_name, "died", false);
+			gdsl_classdb_register_extension_class_signal(gdsl_library, &class_name, &sig_name, NULL, 0);
+		}
 		{
 			gdsl_StringName method_name;
 			gdsl_string_name_new(&method_name, "die", false);
