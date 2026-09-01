@@ -32,6 +32,7 @@ static GDExtensionInterfaceObjectSetInstanceBinding gdsl_object_set_instance_bin
 static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_binding;
 static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;
 static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;
+static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;
 
 static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {
 	gdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address("string_name_new_with_latin1_chars");
@@ -49,6 +50,7 @@ static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address)
 	gdsl_object_get_instance_binding = (GDExtensionInterfaceObjectGetInstanceBinding)p_get_proc_address("object_get_instance_binding");
 	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address("get_variant_to_type_constructor");
 	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address("classdb_unregister_extension_class");
+	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address("classdb_register_extension_class_property");
 }
 
 /* StringName opaque holder (64-bit build: 8 bytes). */
@@ -147,6 +149,25 @@ static GDExtensionClassInstancePtr player_recreate_instance(void *p_class_userda
 	return (GDExtensionClassInstancePtr)self;
 }
 
+static void player_get_hp_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Player *self = (Player *)p_instance;
+	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_INT);
+	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&self->hp);
+}
+static void player_get_hp_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Player *self = (Player *)p_instance;
+	*(int64_t *)r_ret = self->hp;
+}
+static void player_set_hp_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Player *self = (Player *)p_instance;
+	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_INT);
+	to_type((GDExtensionUninitializedTypePtr)&self->hp, (GDExtensionVariantPtr)p_args[0]);
+}
+static void player_set_hp_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Player *self = (Player *)p_instance;
+	self->hp = *(int64_t *)p_args[0];
+}
+
 /* ---- type Bullet @extends Area2D ---- */
 typedef struct {
 	GDExtensionObjectPtr object;
@@ -191,6 +212,25 @@ static GDExtensionClassInstancePtr bullet_recreate_instance(void *p_class_userda
 	self->object = p_object;
 	gdsl_object_set_instance_binding(p_object, gdsl_library, self, &gdsl_binding_callbacks);
 	return (GDExtensionClassInstancePtr)self;
+}
+
+static void bullet_get_damage_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Bullet *self = (Bullet *)p_instance;
+	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_INT);
+	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&self->damage);
+}
+static void bullet_get_damage_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Bullet *self = (Bullet *)p_instance;
+	*(int64_t *)r_ret = self->damage;
+}
+static void bullet_set_damage_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	Bullet *self = (Bullet *)p_instance;
+	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_INT);
+	to_type((GDExtensionUninitializedTypePtr)&self->damage, (GDExtensionVariantPtr)p_args[0]);
+}
+static void bullet_set_damage_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {
+	Bullet *self = (Bullet *)p_instance;
+	self->damage = *(int64_t *)p_args[0];
 }
 
 /* ---- rule OnHit by Bullet target Player ---- */
@@ -241,6 +281,73 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 		class_info.free_instance_func = player_free_instance;
 		class_info.recreate_instance_func = player_recreate_instance;
 		gdsl_classdb_register_extension_class6(gdsl_library, &class_name, &parent_name, &class_info);
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "get_hp", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = player_get_hp_call;
+			mi.ptrcall_func = player_get_hp_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 1;
+			GDExtensionPropertyInfo ri;
+			gdsl_StringName rn;
+			gdsl_string_name_new(&rn, "", false);
+			gdsl_StringName rc;
+			gdsl_string_name_new(&rc, "", false);
+			ri.type = GDEXTENSION_VARIANT_TYPE_INT;
+			ri.name = (GDExtensionStringNamePtr)&rn;
+			ri.class_name = (GDExtensionStringNamePtr)&rc;
+			ri.hint = 0;
+			ri.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ri.usage = 0;
+			mi.return_value_info = &ri;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "set_hp", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = player_set_hp_call;
+			mi.ptrcall_func = player_set_hp_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 0;
+			GDExtensionPropertyInfo ai;
+			gdsl_StringName an;
+			gdsl_string_name_new(&an, "value", false);
+			gdsl_StringName ac;
+			gdsl_string_name_new(&ac, "", false);
+			ai.type = GDEXTENSION_VARIANT_TYPE_INT;
+			ai.name = (GDExtensionStringNamePtr)&an;
+			ai.class_name = (GDExtensionStringNamePtr)&ac;
+			ai.hint = 0;
+			ai.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ai.usage = 0;
+			GDExtensionClassMethodArgumentMetadata am = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;
+			mi.argument_count = 1;
+			mi.arguments_info = &ai;
+			mi.arguments_metadata = &am;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName pn;
+			gdsl_string_name_new(&pn, "hp", false);
+			gdsl_StringName sn;
+			gdsl_string_name_new(&sn, "set_hp", false);
+			gdsl_StringName gn;
+			gdsl_string_name_new(&gn, "get_hp", false);
+			GDExtensionPropertyInfo pi;
+			gdsl_StringName pc;
+			gdsl_string_name_new(&pc, "", false);
+			pi.type = GDEXTENSION_VARIANT_TYPE_INT;
+			pi.name = (GDExtensionStringNamePtr)&pn;
+			pi.class_name = (GDExtensionStringNamePtr)&pc;
+			pi.hint = 0;
+			pi.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			pi.usage = 2; /* PROPERTY_USAGE_STORAGE */
+			gdsl_classdb_register_extension_class_property(gdsl_library, &class_name, &pi, &sn, &gn);
+		}
 	}
 	{
 		gdsl_StringName class_name;
@@ -279,6 +386,73 @@ static void gdsl_initialize(void *p_userdata, GDExtensionInitializationLevel p_l
 			method_info.arguments_info = arg_info;
 			method_info.arguments_metadata = arg_meta;
 			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &method_info);
+		}
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "get_damage", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = bullet_get_damage_call;
+			mi.ptrcall_func = bullet_get_damage_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 1;
+			GDExtensionPropertyInfo ri;
+			gdsl_StringName rn;
+			gdsl_string_name_new(&rn, "", false);
+			gdsl_StringName rc;
+			gdsl_string_name_new(&rc, "", false);
+			ri.type = GDEXTENSION_VARIANT_TYPE_INT;
+			ri.name = (GDExtensionStringNamePtr)&rn;
+			ri.class_name = (GDExtensionStringNamePtr)&rc;
+			ri.hint = 0;
+			ri.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ri.usage = 0;
+			mi.return_value_info = &ri;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName mn;
+			gdsl_string_name_new(&mn, "set_damage", false);
+			GDExtensionClassMethodInfo mi = { 0 };
+			mi.name = (GDExtensionStringNamePtr)&mn;
+			mi.call_func = bullet_set_damage_call;
+			mi.ptrcall_func = bullet_set_damage_ptr;
+			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;
+			mi.has_return_value = 0;
+			GDExtensionPropertyInfo ai;
+			gdsl_StringName an;
+			gdsl_string_name_new(&an, "value", false);
+			gdsl_StringName ac;
+			gdsl_string_name_new(&ac, "", false);
+			ai.type = GDEXTENSION_VARIANT_TYPE_INT;
+			ai.name = (GDExtensionStringNamePtr)&an;
+			ai.class_name = (GDExtensionStringNamePtr)&ac;
+			ai.hint = 0;
+			ai.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			ai.usage = 0;
+			GDExtensionClassMethodArgumentMetadata am = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;
+			mi.argument_count = 1;
+			mi.arguments_info = &ai;
+			mi.arguments_metadata = &am;
+			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);
+		}
+		{
+			gdsl_StringName pn;
+			gdsl_string_name_new(&pn, "damage", false);
+			gdsl_StringName sn;
+			gdsl_string_name_new(&sn, "set_damage", false);
+			gdsl_StringName gn;
+			gdsl_string_name_new(&gn, "get_damage", false);
+			GDExtensionPropertyInfo pi;
+			gdsl_StringName pc;
+			gdsl_string_name_new(&pc, "", false);
+			pi.type = GDEXTENSION_VARIANT_TYPE_INT;
+			pi.name = (GDExtensionStringNamePtr)&pn;
+			pi.class_name = (GDExtensionStringNamePtr)&pc;
+			pi.hint = 0;
+			pi.hint_string = (GDExtensionStringPtr)gdsl_empty_string;
+			pi.usage = 2; /* PROPERTY_USAGE_STORAGE */
+			gdsl_classdb_register_extension_class_property(gdsl_library, &class_name, &pi, &sn, &gn);
 		}
 	}
 }

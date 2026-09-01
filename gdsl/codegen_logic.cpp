@@ -13,6 +13,16 @@ static const char *c_scalar_type(ValueType t) {
 	}
 }
 
+// 字段 Variant 类型（GDExtensionVariantType 枚举名）。仅标量；Named/String 单独处理。
+static const char *variant_type(ValueType t) {
+	switch (t) {
+		case ValueType::Int: return "GDEXTENSION_VARIANT_TYPE_INT";
+		case ValueType::Float: return "GDEXTENSION_VARIANT_TYPE_FLOAT";
+		case ValueType::Bool: return "GDEXTENSION_VARIANT_TYPE_BOOL";
+		default: return nullptr;
+	}
+}
+
 // 字段 C 类型：Named 映射为指向该类型 struct 的指针。
 static std::string c_field_type(const TypedField &f) {
 	if (f.type == ValueType::Named) {
@@ -126,6 +136,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_binding;\n";
 	out += "static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;\n";
 	out += "static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;\n";
+	out += "static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;\n";
 	out += "\n";
 	out += "static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {\n";
 	out += "\tgdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address(\"string_name_new_with_latin1_chars\");\n";
@@ -143,6 +154,7 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "	gdsl_object_get_instance_binding = (GDExtensionInterfaceObjectGetInstanceBinding)p_get_proc_address(\"object_get_instance_binding\");\n";
 	out += "	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address(\"get_variant_to_type_constructor\");\n";
 	out += "	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address(\"classdb_unregister_extension_class\");\n";
+	out += "	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address(\"classdb_register_extension_class_property\");\n";
 	out += "}\n";
 	out += "\n";
 
@@ -267,6 +279,37 @@ std::string emit_c(const TypedProgram &prog) {
 		out += "	return (GDExtensionClassInstancePtr)self;\n";
 		out += "}\n";
 		out += "\n";
+		// getter/setter methods for state fields (hot-reload state preservation via
+		// Godot's property system — prepare_reload saves via get, finish_reload restores
+		// via set). Only scalar types for now; Named/String are handled separately.
+		for (const TypedField &f : t.fields) {
+			const char *vt = variant_type(f.type);
+			if (!vt) {
+				continue;
+			}
+			const std::string getter = pfx + "_get_" + f.name;
+			const std::string setter = pfx + "_set_" + f.name;
+			const std::string cty = c_scalar_type(f.type);
+			out += "static void " + getter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+			out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+			out += "	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(" + std::string(vt) + ");\n";
+			out += "	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&self->" + f.name + ");\n";
+			out += "}\n";
+			out += "static void " + getter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+			out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+			out += "	*(" + cty + " *)r_ret = self->" + f.name + ";\n";
+			out += "}\n";
+			out += "static void " + setter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+			out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+			out += "	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(" + std::string(vt) + ");\n";
+			out += "	to_type((GDExtensionUninitializedTypePtr)&self->" + f.name + ", (GDExtensionVariantPtr)p_args[0]);\n";
+			out += "}\n";
+			out += "static void " + setter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+			out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+			out += "	self->" + f.name + " = *(" + cty + " *)p_args[0];\n";
+			out += "}\n";
+			out += "\n";
+		}
 	}
 
 	// ---- 规则 → 方法（effect codegen：guard + set_field + emit，self/target） ----
@@ -400,9 +443,89 @@ std::string emit_c(const TypedProgram &prog) {
 				out += "			method_info.argument_count = 0;\n";
 			}
 			out += "			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &method_info);\n";
-			out += "\t\t}\n";
+			out += "		}\n";
 		}
-		out += "\t}\n";
+		// getter/setter + property registration for state fields (hot-reload state
+		// preservation: prepare_reload saves via get, finish_reload restores via set).
+		for (const TypedField &f : t.fields) {
+			const char *vt = variant_type(f.type);
+			if (!vt) {
+				continue;
+			}
+			const std::string getter = pfx + "_get_" + f.name;
+			const std::string setter = pfx + "_set_" + f.name;
+			// getter method
+			out += "		{\n";
+			out += "			gdsl_StringName mn;\n";
+			out += "			gdsl_string_name_new(&mn, \"get_" + f.name + "\", false);\n";
+			out += "			GDExtensionClassMethodInfo mi = { 0 };\n";
+			out += "			mi.name = (GDExtensionStringNamePtr)&mn;\n";
+			out += "			mi.call_func = " + getter + "_call;\n";
+			out += "			mi.ptrcall_func = " + getter + "_ptr;\n";
+			out += "			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;\n";
+			out += "			mi.has_return_value = 1;\n";
+			out += "			GDExtensionPropertyInfo ri;\n";
+			out += "			gdsl_StringName rn;\n";
+			out += "			gdsl_string_name_new(&rn, \"\", false);\n";
+			out += "			gdsl_StringName rc;\n";
+			out += "			gdsl_string_name_new(&rc, \"\", false);\n";
+			out += "			ri.type = " + std::string(vt) + ";\n";
+			out += "			ri.name = (GDExtensionStringNamePtr)&rn;\n";
+			out += "			ri.class_name = (GDExtensionStringNamePtr)&rc;\n";
+			out += "			ri.hint = 0;\n";
+			out += "			ri.hint_string = (GDExtensionStringPtr)gdsl_empty_string;\n";
+			out += "			ri.usage = 0;\n";
+			out += "			mi.return_value_info = &ri;\n";
+			out += "			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);\n";
+			out += "		}\n";
+			// setter method
+			out += "		{\n";
+			out += "			gdsl_StringName mn;\n";
+			out += "			gdsl_string_name_new(&mn, \"set_" + f.name + "\", false);\n";
+			out += "			GDExtensionClassMethodInfo mi = { 0 };\n";
+			out += "			mi.name = (GDExtensionStringNamePtr)&mn;\n";
+			out += "			mi.call_func = " + setter + "_call;\n";
+			out += "			mi.ptrcall_func = " + setter + "_ptr;\n";
+			out += "			mi.method_flags = GDEXTENSION_METHOD_FLAG_NORMAL;\n";
+			out += "			mi.has_return_value = 0;\n";
+			out += "			GDExtensionPropertyInfo ai;\n";
+			out += "			gdsl_StringName an;\n";
+			out += "			gdsl_string_name_new(&an, \"value\", false);\n";
+			out += "			gdsl_StringName ac;\n";
+			out += "			gdsl_string_name_new(&ac, \"\", false);\n";
+			out += "			ai.type = " + std::string(vt) + ";\n";
+			out += "			ai.name = (GDExtensionStringNamePtr)&an;\n";
+			out += "			ai.class_name = (GDExtensionStringNamePtr)&ac;\n";
+			out += "			ai.hint = 0;\n";
+			out += "			ai.hint_string = (GDExtensionStringPtr)gdsl_empty_string;\n";
+			out += "			ai.usage = 0;\n";
+			out += "			GDExtensionClassMethodArgumentMetadata am = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;\n";
+			out += "			mi.argument_count = 1;\n";
+			out += "			mi.arguments_info = &ai;\n";
+			out += "			mi.arguments_metadata = &am;\n";
+			out += "			gdsl_classdb_register_extension_class_method(gdsl_library, &class_name, &mi);\n";
+			out += "		}\n";
+			// property
+			out += "		{\n";
+			out += "			gdsl_StringName pn;\n";
+			out += "			gdsl_string_name_new(&pn, \"" + f.name + "\", false);\n";
+			out += "			gdsl_StringName sn;\n";
+			out += "			gdsl_string_name_new(&sn, \"set_" + f.name + "\", false);\n";
+			out += "			gdsl_StringName gn;\n";
+			out += "			gdsl_string_name_new(&gn, \"get_" + f.name + "\", false);\n";
+			out += "			GDExtensionPropertyInfo pi;\n";
+			out += "			gdsl_StringName pc;\n";
+			out += "			gdsl_string_name_new(&pc, \"\", false);\n";
+			out += "			pi.type = " + std::string(vt) + ";\n";
+			out += "			pi.name = (GDExtensionStringNamePtr)&pn;\n";
+			out += "			pi.class_name = (GDExtensionStringNamePtr)&pc;\n";
+			out += "			pi.hint = 0;\n";
+			out += "			pi.hint_string = (GDExtensionStringPtr)gdsl_empty_string;\n";
+			out += "			pi.usage = 2; /* PROPERTY_USAGE_STORAGE */\n";
+			out += "			gdsl_classdb_register_extension_class_property(gdsl_library, &class_name, &pi, &sn, &gn);\n";
+			out += "		}\n";
+		}
+		out += "	}\n";
 	}
 	out += "}\n";
 	out += "\n";
