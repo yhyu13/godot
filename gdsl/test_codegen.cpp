@@ -136,6 +136,7 @@ TEST_CASE("[GDSL] Emit GDExtension source is deterministic") {
 TEST_CASE("[GDSL] Emit emit_signal codegen with method-bind hash and helper") {
 	const gdsl::TypedProgram typed = typed_program(
 			"type Player @extends CharacterBody2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"
@@ -160,6 +161,7 @@ TEST_CASE("[GDSL] Emit emit_signal codegen with method-bind hash and helper") {
 TEST_CASE("[GDSL] Emit emit_signal de-duplicates repeated signal names") {
 	const gdsl::TypedProgram typed = typed_program(
 			"type Player @extends Node2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"
@@ -180,6 +182,7 @@ TEST_CASE("[GDSL] Emit emit_signal de-duplicates repeated signal names") {
 TEST_CASE("[GDSL] Emit emit_signal codegen is deterministic") {
 	const gdsl::TypedProgram typed = typed_program(
 			"type Player @extends Node2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"
@@ -287,6 +290,7 @@ TEST_CASE("[GDSL] String field emits getter/setter/property (hot-reload preserve
 TEST_CASE("[GDSL] Signal-name StringName is static-once (no per-emit creation, no unbounded leak)") {
 	const gdsl::TypedProgram typed = typed_program(
 			"type Player @extends Node2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"
@@ -307,6 +311,7 @@ TEST_CASE("[GDSL] Signal-name StringName is static-once (no per-emit creation, n
 TEST_CASE("[GDSL] Emit codegen registers the signal on the class (so connect can receive it)") {
 	const gdsl::TypedProgram typed = typed_program(
 			"type Player @extends CharacterBody2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"

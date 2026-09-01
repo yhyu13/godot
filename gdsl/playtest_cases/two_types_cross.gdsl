@@ -1,4 +1,5 @@
 type Bullet @extends Area2D
+    signals: hit
     state:
         damage: int = 1
     rule Fade by Bullet:

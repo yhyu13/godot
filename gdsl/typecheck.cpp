@@ -155,6 +155,7 @@ bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 		TypedType tt;
 		tt.name = t.name;
 		tt.base = t.base;
+		tt.signals = t.signals;
 		for (const FieldDecl &f : t.fields) {
 			for (const TypedField &existing : tt.fields) {
 				if (existing.name == f.name) {
@@ -229,7 +230,25 @@ bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 		}
 		for (const Effect &fx : tr.effects) {
 			if (fx.kind == EffectKind::Emit) {
-				// 信号发射：不引用字段，信号名已在 parse_effects 校验为合法标识符。
+				// FR-005: 信号存在性校验。codegen 会把每个 emit(<sig>) 在 rule 的 owner(by) 类型上注册
+				// 为信号；若信号名未在该类型用 signals: 声明，则要么是拼错（如 hitt 当 hit），要么是
+				// 随意构造——连接方 connect 该名会静默失败（LLM_UNFRIENDLY #4 的「待钉死」）。
+				// 需要在 type 上声明，提前把「静默 no-op」变成「编译错→改一下」。
+				const TypedType *sig_owner = owner;
+				bool declared = false;
+				if (sig_owner != nullptr) {
+					for (const std::string &s : sig_owner->signals) {
+						if (s == fx.signal_name) {
+							declared = true;
+							break;
+						}
+					}
+				}
+				if (!declared) {
+					err = "rule '" + r.name + "': signal '" + fx.signal_name + "' is not declared in type '" +
+							(sig_owner ? sig_owner->name : "?") + "' (add 'signals: " + fx.signal_name + "' to the type)";
+					return false;
+				}
 				continue;
 			}
 			const TypedType *ref_type = (fx.ref == RefOwner::Target) ? target : owner;

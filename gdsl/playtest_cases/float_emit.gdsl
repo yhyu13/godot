@@ -1,4 +1,5 @@
 type Player @extends CharacterBody2D
+    signals: dash
     state:
         speed: float = 100.0
         hp: int = 3

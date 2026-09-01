@@ -138,6 +138,7 @@ TEST_CASE("[GDSL] Reject rule referencing unknown field") {
 TEST_CASE("[GDSL] Typecheck rule with emit_signal effect") {
 	const gdsl::Program prog = parse(
 			"type Player @extends Node2D\n"
+			"    signals: died\n"
 			"state:\n"
 			"    hp: int = 3\n"
 			"\n"
@@ -151,6 +152,25 @@ TEST_CASE("[GDSL] Typecheck rule with emit_signal effect") {
 	REQUIRE(typed.rules[0].effects.size() == 1);
 	CHECK(typed.rules[0].effects[0].kind == gdsl::EffectKind::Emit);
 	CHECK(typed.rules[0].effects[0].signal_name == "died");
+}
+
+// FR-005 mutation guard (typo_signal): 拼错的信号名必须被 typecheck 拒收，否则 codegen 会注册一个
+// 无名信号、连接方 connect 该名静默失败（silent no-op）。这是可验证性真实缺口。
+TEST_CASE("[GDSL] Typecheck rejects an undeclared signal in emit (typo_signal)") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule R by P:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1, emit(hitt)\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	// is_godot_class 分支先过（CharacterBody2D 真实存在），失败必须来自 signal 未声明。
+	CHECK(err.find("signal") != std::string::npos);
 }
 
 TEST_CASE("[GDSL] Reject target ref without a target clause") {

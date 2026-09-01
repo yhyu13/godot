@@ -106,6 +106,30 @@ bool parse_state_field(const std::string &line, FieldDecl &out, std::string &err
 	return true;
 }
 
+// 解析可选 "signals: a, b" 信号声明行（FR-005：信号存在性校验的封闭词汇表）。
+// 约定 signals: 独占一行（可用逗号分隔多个信号名）且不含 '='（否则会被当成 state 字段）。
+static bool parse_signals(const std::string &line, TypeDecl &out) {
+	const std::string s = trim(line);
+	const std::string kw = "signals:";
+	if (s.compare(0, kw.size(), kw) != 0 || s.find('=') != std::string::npos) {
+		return false; // 不是 signals 注释行（可能是名为 signals 的字段）
+	}
+	const std::string rest = s.substr(kw.size());
+	size_t pos = 0;
+	while (pos <= rest.size()) {
+		size_t comma = rest.find(',', pos);
+		std::string tok = trim((comma == std::string::npos) ? rest.substr(pos) : rest.substr(pos, comma - pos));
+		if (!tok.empty()) {
+			out.signals.push_back(tok);
+		}
+		if (comma == std::string::npos) {
+			break;
+		}
+		pos = comma + 1;
+	}
+	return true;
+}
+
 // 解析 type 块；line_offset = 块首行在源程序里的 0-based 起始行号，供 FR-009 报错定位。
 bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err, size_t line_offset) {
 	const std::vector<std::string> lines = split_lines(text);
@@ -123,6 +147,15 @@ bool parse_type_block(const std::string &text, TypeDecl &out, std::string &err, 
 	}
 	i++;
 	out.fields.clear();
+	out.signals.clear();
+
+	// 可选 signals: 注释块（需在 "state:" 之前）
+	while (i < lines.size() && trim(lines[i]).empty()) {
+		i++;
+	}
+	if (i < lines.size() && parse_signals(lines[i], out)) {
+		i++;
+	}
 
 	// 跳过空行，看是否有 "state:" 块
 	while (i < lines.size() && trim(lines[i]).empty()) {

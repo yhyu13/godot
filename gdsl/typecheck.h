@@ -21,6 +21,7 @@ struct TypedType {
 	std::string name;
 	std::string base;
 	std::vector<TypedField> fields;
+	std::vector<std::string> signals; // 声明的信号名（FR-005 存在性校验词汇表）
 };
 
 struct TypedRule {

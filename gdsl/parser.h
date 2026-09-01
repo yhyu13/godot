@@ -16,6 +16,7 @@ struct TypeDecl {
 	std::string name; // 类型名，如 "Player"
 	std::string base; // 基类，如 "CharacterBody2D"
 	std::vector<FieldDecl> fields; // state: 块里的字段列表
+	std::vector<std::string> signals; // 可选 signals: 声明的信号名（FR-005 存在性校验词汇表）
 };
 
 struct RuleDecl {
