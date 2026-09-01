@@ -34,6 +34,7 @@ You are working in an OpenWolf-managed project. These rules apply every turn.
 1. Before generating code, read `.wolf/cerebrum.md` and respect every entry.
 2. Check the `## Do-Not-Repeat` section — these are past mistakes that must not recur.
 3. Follow all conventions in `## Key Learnings` and `## User Preferences`.
+4. **Long-run autonomous sessions** (a multi-hour uninterrupted agent run): read `doc_ai/GDSL_LONG_RUN.md` before starting — it holds the contract + state + resumable triad and the Gate-gated exploration rules that keep a long/autonomous run from drifting. If the session is planning to keep working unattended for hours, respect its two hard forbiddens: no fix before a control experiment, and no crash root-cause claim without a symbolicated stack.
 
 ## After Actions
 

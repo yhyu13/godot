@@ -242,3 +242,65 @@ TEST_CASE("[GDSL] Emit schema-safe setter (type-check before marshal)") {
 	// 标量 setter 在封送前检查 Variant 类型：LLM 改字段类型后，旧状态类型不匹配就跳过，不污染默认值。
 	CHECK(c.find("if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != GDEXTENSION_VARIANT_TYPE_INT) {") != std::string::npos);
 }
+
+TEST_CASE("[GDSL] String field emits char* member and no double-quoted default") {
+	const gdsl::TypedProgram typed = typed_program(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    name: string = \"hero\"\n");
+	const std::string c = gdsl::emit_c(typed);
+	// 修复双层引号 bug：default_value 已含引号，codegen 不再包一层。
+	CHECK(c.find("\"\"hero\"\"") == std::string::npos);
+	CHECK(c.find("char * name;") != std::string::npos);
+	// constructor 用 gdsl_mem_alloc 拷贝默认值（不用只读字面量，避免 setter/free 撞字面量）。
+	CHECK(c.find("self->name = (char *)gdsl_mem_alloc(sizeof(\"hero\"));") != std::string::npos);
+	CHECK(c.find("memcpy(self->name, \"hero\", sizeof(\"hero\"));") != std::string::npos);
+}
+
+TEST_CASE("[GDSL] String field emits getter/setter/property (hot-reload preserve)") {
+	const gdsl::TypedProgram typed = typed_program(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    name: string = \"hero\"\n");
+	const std::string c = gdsl::emit_c(typed);
+	// getter 经 string_new_with_utf8_chars 建 transient String，再包成 STRING Variant。
+	CHECK(c.find("gdsl_string_new((GDExtensionUninitializedStringPtr)&tmp, self->name ? self->name : \"\");") != std::string::npos);
+	CHECK(c.find("gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_STRING)") != std::string::npos);
+	// schema-safe setter：类型不匹配跳过。
+	CHECK(c.find("if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != GDEXTENSION_VARIANT_TYPE_STRING) {") != std::string::npos);
+	// setter 经 string_to_utf8_chars 取值 + gdsl_mem_alloc 新 buffer + free 旧 buffer。
+	CHECK(c.find("GDExtensionInt len = gdsl_string_to_utf8_chars((GDExtensionConstStringPtr)&tmp, NULL, 0);") != std::string::npos);
+	CHECK(c.find("char *buf = (char *)gdsl_mem_alloc((size_t)len + 1);") != std::string::npos);
+	CHECK(c.find("if (self->name) gdsl_mem_free(self->name);") != std::string::npos);
+	// destructor 释放字段 buffer（干净 ownership）。
+	CHECK(c.find("if (self->name) gdsl_mem_free(self->name);") != std::string::npos);
+	// property 注册类型 = STRING + get_/set_ 方法名。
+	CHECK(c.find("pi.type = GDEXTENSION_VARIANT_TYPE_STRING;") != std::string::npos);
+	CHECK(c.find("gdsl_string_name_new(&pn, \"name\", false);") != std::string::npos);
+	CHECK(c.find("gdsl_string_name_new(&sn, \"set_name\", false);") != std::string::npos);
+	CHECK(c.find("gdsl_string_name_new(&gn, \"get_name\", false);") != std::string::npos);
+	// 新增 API 缓存：string_new_with_utf8_chars / string_to_utf8_chars。
+	CHECK(c.find("(GDExtensionInterfaceStringNewWithUtf8Chars)p_get_proc_address(\"string_new_with_utf8_chars\")") != std::string::npos);
+	CHECK(c.find("(GDExtensionInterfaceStringToUtf8Chars)p_get_proc_address(\"string_to_utf8_chars\")") != std::string::npos);
+}
+
+TEST_CASE("[GDSL] Signal-name StringName is static-once (no per-emit creation, no unbounded leak)") {
+	const gdsl::TypedProgram typed = typed_program(
+			"type Player @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Die by Player:\n"
+			"    when self.hp <= 0\n"
+			"    then emit(died)\n");
+	const std::string c = gdsl::emit_c(typed);
+	// 信号名 StringName 只在 init 创建一次、p_is_static=true（static StringName 免析构、程序周期复用）。
+	CHECK(c.find("static gdsl_StringName gdsl_signal_died;") != std::string::npos);
+	CHECK(c.find("gdsl_string_name_new(&gdsl_signal_died, \"died\", true);") != std::string::npos);
+	// helper 只引用缓存，不新建（无 per-emit StringName 创建）。
+	CHECK(c.find("gdsl_emit_signal(self->object, &gdsl_signal_died);") != std::string::npos);
+	// 无 string_destroy/string_name_destroy 被调用（ABI 没有这个函数）。
+	CHECK(c.find("string_destroy") == std::string::npos);
+	CHECK(c.find("string_name_destroy") == std::string::npos);
+}
+

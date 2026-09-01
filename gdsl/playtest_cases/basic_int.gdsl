@@ -1,0 +1,6 @@
+type Player @extends CharacterBody2D
+state:
+    hp: int = 3
+rule TakeDamage by Player:
+    when self.hp > 0
+    then self.hp -= 1

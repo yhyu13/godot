@@ -45,10 +45,24 @@ Godot Engine source (C++17, MIT), version 4.7.3-rc, branch `4.7`. Origin remote 
 - **Any PR adding/changing script-exposed methods/properties/signals must update `doc/classes/*.xml`** — regenerate with the compiled binary's `--doctool`, then hand-fill descriptions (`CONTRIBUTING.md:148-158`; `main/main.cpp:716`).
 - Feature proposals go to `godotengine/godot-proposals`, not this repo's issue tracker (`CONTRIBUTING.md:43-47`).
 - C++ style follows Godot's usage guidelines and `.clang-format`; `doc/tools/make_rst.py` / `doc_status.py` enforce doc coverage.
+- **Never claim a crash root cause without a symbolicated stack.** A crash/teardown segfault (e.g. the GDExtension-exit EXIT 139) must be diagnosed from a real call stack or a control experiment (ab/对照) — not from source-path reasoning. Verified against `.wolf/cerebrum.md` Do-Not-Repeat `[2026-08-31]`: asserting a teardown root cause from inference was wrong, and the accompanying `p_is_static` change broke the test suite. Fix the cause, not the symptom; state the evidence gap honestly ("no stack yet") instead of presenting an unverified hypothesis as a finding.
 
 ## Module teaching docs (144, in Chinese)
 
 Every one of Godot's 144 subsystems (`core/`, `scene/`, `servers/`, `editor/`, `modules/`, `drivers/`, `platform/`) has a Chinese teaching doc — conclusion-first, source-anchored (`file:line`), with mermaid diagrams and 口诀/练习/自测. Index: [`docs/INDEX.md`](docs/INDEX.md) (grouped by layer, clickable); writing spec: [`docs/DOC_SPEC.md`](docs/DOC_SPEC.md). Check the index before reading a module's source — the doc may already answer it.
+
+## GDSL / LLM-DSL project (spec-first, in-repo docs)
+
+The LLM-friendly DSL work lives **completely inside this fork** — its design, specs, and team rules are in-repo and are the source of truth for anything touching `gdsl/`. **Read the relevant spec before writing; read `.wolf/cerebrum.md` before generating code** (it carries the Decision Log, Do-Not-Repeat lessons, and ABI walls).
+
+- **Specs: [`specs/`](specs/)** — 10 slice specs (`001-json` … `009-engine-integration`, `010-llm-interface`), one per component, run in order; `009` is active (`specs/009-engine-integration/spec.md`). `010-llm-interface` is the forward-spec for "is the DSL actually LLM-friendly" (first-try rate / iterations-to-valid, via `gdsl/toolchain/llm_conv_bench.py`).
+- **Design: [`doc_ai/GODOT_LLM_DSL_DESIGN.md`](doc_ai/GODOT_LLM_DSL_DESIGN.md)** — the two-layer architecture (declarative JSON→`.tscn` via `ResourceFormatLoaderText`; logic → GDExtension `ptrcall`); source-anchored; the "可验证 > 可表达" thesis. Read before touching `gdsl/` codegen.
+- **AI-native audits:** [`doc_ai/LLM_UNFRIENDLY_DESIGNS.md`](doc_ai/LLM_UNFRIENDLY_DESIGNS.md) (8 Godot traits that are anti-LLM + counters) and [`doc_ai/LLM_READABILITY_AUDIT.md`](doc_ai/LLM_READABILITY_AUDIT.md) (binary layer; key conclusion: don't convert the 107 binaries — use `extension_api.json` / `gdextension_interface.json` / `doc/*.xml`).
+- **Process: [`doc_ai/SOP_TDD_AI_TESTING.md`](doc_ai/SOP_TDD_AI_TESTING.md)** — law/metric/morality three-tier, seam cards, red-before-green, hard Definition of Done (§4.4), anti-drift (§4.5). Operating procedure for `gdsl/` slices and AI follow-through.
+- **Long-run autonomy: [`doc_ai/GDSL_LONG_RUN.md`](doc_ai/GDSL_LONG_RUN.md)** — rules for continuous/autonomous ~8h agent work (contract + state + resumable; Gate-gated exploration; parallel ≫ serial).
+- **Status: `.wolf/STATUS.md`** (single source of truth for done/next); day-plans in `doc_ai/PLAN_GDSL_8H.md`, `PLAN_GDSL_010.md`, `PLAN_GDSL_DIR5.md`.
+
+The GDSL kernel is a **standalone** C++17 tree (`gdsl/`) with its own doctest harness — `cd gdsl && powershell -File test.ps1` runs the whole suite in seconds. **Do not rebuild the engine to test `gdsl/`**; engine integration is only slice S6/`009`.
 
 <!-- openwolf:begin -->
 # OpenWolf

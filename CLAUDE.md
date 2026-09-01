@@ -85,6 +85,17 @@ From [CONTRIBUTING.md](CONTRIBUTING.md) — these are enforced, not advisory:
 
 Engine classes exposed to scripts are registered through `ClassDB::bind_method(...)` and macros like `BIND_ENUM_CONSTANT`. When you add or change a class's script-visible surface, the generated bindings (`core/core_bind.*`, `scene/...`, `.gen.inc` / `*.compat.inc` files) are regenerated at build time and the `doc/classes/*.xml` reference must be updated with `./bin/godot.* --doctool`.
 
+## GDSL / LLM-DSL project (spec-first, in-repo docs)
+
+The LLM-friendly DSL work lives entirely **inside this fork** — design, specs, and team rules are in-repo and are the source of truth for anything touching `gdsl/`. **Read the relevant spec before writing; read `.wolf/cerebrum.md` before generating code** (Decision Log, Do-Not-Repeat, ABI walls).
+
+- **Specs: [`specs/`](specs/)** — 10 slice specs (`001-json` … `009-engine-integration`, `010-llm-interface`), one per component, run in order; `009` active (`specs/009-engine-integration/spec.md`); `010` is the forward-spec for "is the DSL actually LLM-friendly".
+- **Design: [`doc_ai/GODOT_LLM_DSL_DESIGN.md`](doc_ai/GODOT_LLM_DSL_DESIGN.md)** — two-layer architecture (declarative JSON→`.tscn` via `ResourceFormatLoaderText`; logic → GDExtension `ptrcall`); "可验证 > 可表达".
+- **[`doc_ai/LLM_UNFRIENDLY_DESIGNS.md`](doc_ai/LLM_UNFRIENDLY_DESIGNS.md)** (8 anti-LLM traits + counters) and **[`doc_ai/LLM_READABILITY_AUDIT.md`](doc_ai/LLM_READABILITY_AUDIT.md)** (don't convert the 107 binaries — use `extension_api.json` / `gdextension_interface.json` / `doc/*.xml`).
+- **Process: [`doc_ai/SOP_TDD_AI_TESTING.md`](doc_ai/SOP_TDD_AI_TESTING.md)** — law/metric/morality tiers, seam cards, red-before-green, hard DoD (§4.4), anti-drift (§4.5).
+- **Long-run autonomy: [`doc_ai/GDSL_LONG_RUN.md`](doc_ai/GDSL_LONG_RUN.md)** — continuous/autonomous ~8h agent rules (contract + state + resumable; Gate-gated exploration; parallel ≫ serial).
+- **Status: `.wolf/STATUS.md`** (done/next). The GDSL kernel is **standalone** C++17 (`gdsl/`) — `cd gdsl && powershell -File test.ps1` runs the suite in seconds; **don't rebuild the engine to test `gdsl/`**.
+
 ## Module teaching docs (144, in Chinese)
 
 Every one of Godot's 144 subsystems (`core/`, `scene/`, `servers/`, `editor/`, `modules/`, `drivers/`, `platform/`) has a Chinese teaching doc — conclusion-first, source-anchored (`file:line`), with mermaid diagrams and 口诀/练习/自测. Index: [`docs/INDEX.md`](docs/INDEX.md) (grouped by layer, clickable); writing spec: [`docs/DOC_SPEC.md`](docs/DOC_SPEC.md). Check the index before reading a module's source — the doc may already answer it.

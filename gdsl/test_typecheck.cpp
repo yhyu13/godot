@@ -241,3 +241,119 @@ TEST_CASE("[GDSL] Typecheck error names the offending symbol") {
 	// FR-009：报错必须点名违规符号（Ghost），不是空泛的 "unknown type"。
 	CHECK(err.find("Ghost") != std::string::npos);
 }
+
+TEST_CASE("[GDSL] Reject float literal into int field (default)") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 0.5\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Reject non-numeric default into int field") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"state:\n"
+			"    hp: int = hello\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Reject float literal into int field (effect)") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Tick by A:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 0.5\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Reject float literal into int field (guard)") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Tick by A:\n"
+			"    when self.hp > 0.5\n"
+			"    then self.hp -= 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] Accept int literal widening into float field") {
+	const gdsl::Program prog = parse(
+			"type A @extends Node2D\n"
+			"state:\n"
+			"    speed: float = 400\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule Accel by A:\n"
+			"    when self.hp > 0\n"
+			"    then self.speed = 3\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	CHECK(typed.types[0].fields[0].type == gdsl::ValueType::Float);
+}
+
+TEST_CASE("[GDSL] Gap B: accept a real Godot base class") {
+	const gdsl::Program prog = parse(
+			"type Weapon @extends Resource\n"
+			"\n"
+			"type Player @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	REQUIRE(typed.types.size() == 2);
+	CHECK(typed.types[1].base == "CharacterBody2D");
+}
+
+TEST_CASE("[GDSL] Gap B: reject hallucinated @extends base") {
+	const gdsl::Program prog = parse(
+			"type Player @extends FooBar\n"
+			"state:\n"
+			"    hp: int = 3\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	CHECK(err.find("FooBar") != std::string::npos);
+}
+
+TEST_CASE("[GDSL] Gap B: reject a typo'd @extends base") {
+	const gdsl::Program prog = parse(
+			"type Player @extends Node2Dd\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	CHECK(err.find("Node2Dd") != std::string::npos);
+}
+
+TEST_CASE("[GDSL] Gap B: reject @extends naming a GDSL type, not a Godot class") {
+	const gdsl::Program prog = parse(
+			"type Bullet @extends Area2D\n"
+			"\n"
+			"type Player @extends Bullet\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	CHECK(err.find("Bullet") != std::string::npos);
+}

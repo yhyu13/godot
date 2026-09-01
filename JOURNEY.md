@@ -277,6 +277,7 @@
 - **方向拍板（走 B，reload 硬化）**：放弃 A（009 引擎集成），继续把热重载做扎实。顺序 1→2→3：① 定位 flaky reload+关机 segfault（抓栈坐实悬空指针）；② Named 字段状态保持；③ schema 容错。⑤（StringName 泄漏 + manifest 一致性）随路顺手做。此条为本会话后续主攻方向。
 - **方向 1 结果（flaky 崩溃 = dev-build 特有，生产路径干净）**：release 版（target=editor debug_symbols=yes，无 dev_build）28/28 干净不崩，dev 版 1/5 崩 → 悬空解引用只在 dev 的未优化堆布局下崩，release 优化后不崩。抓栈三路全堵：debug CRT 不生效（Godot memalloc 走 HeapAlloc 非 CRT malloc）、cdb 被 dev 版 WARN_PRINT 的 `GENERATE_TRAP()`(`__debugbreak`/int 3，error_macros.h:98) 卡住等输入、gflags 需 admin（本会话无）。结论：flaky 崩溃 = dev-only 开发者工具链小毛病，优先级低，不挡生产。方向 1 降级绕过，可进方向 2/3。
 - **方向 2 结果（Named 字段状态保持，已落地）**：codegen 补 Named 字段 getter/setter——getter 把对象引用封成 OBJECT Variant（null 走 NIL，`variant_new_nil`），setter 经 `object_get_instance_binding` 解析回 C 结构体，加 `variant_new_nil`/`variant_get_type` ABI 缓存。新增 `named.gdsl` 样例（`Bullet.owner: Player = null`）。实测 `before hp=7 owner_set=true → reload → after hp=7 owner_same=true`，5/5 确定性正确。依赖顺序不是问题（finish_reload 先 recreate 全部再统一 restore）。commit d1bc48a。
+- **方向 3 结果（schema 容错，已落地）**：标量 setter 在封送前加 `variant_get_type != 期望类型 → return`（`gdsl/codegen_logic.cpp`），LLM 改字段类型后旧状态类型不匹配就跳过、留默认值，不污染不崩溃。字段删除/改名已天然安全（属性查找丢未知名）。Named 跨类型（Player→Bullet）是已知限制（本轮不做）。单测 `[GDSL] Emit schema-safe setter` 断言类型检查在生成代码里；89/353 绿；Named 往返 3/3 正常（owner_same + hp=7，类型检查不破坏正常路径）。commit 02ce651。
 - **确定性 before/after（autoload 在编辑器泄漏 Player，同一模式同一场景）**：修复前 `Leaked instance: :<id>`（空类名 = 悬空 `_gdtype_ptr`），修复后 `Leaked instance: Node2D:<id>`（`_clear_extension` 清成原生类）。团队 GUI 崩溃 = 悬空 `_gdtype_ptr` 读到被回收 StringName 的垃圾 → 构造垃圾 String → 析构 free 非法指针 → `Invalid parameter passed to C runtime function`；headless 里被析构 StringName 恰好归零成空串故不崩，但悬空解引用是同一个。修复从根上断了这条链（`_gdtype_ptr` 清成原生类型）。复现脚本 `gdsl/example/leak_editor.gd` + project.godot autoload。
 - **诚实边界**：团队原始崩溃（GUI 编辑器、EXIT 139、"Invalid parameter passed to C runtime function"）headless 下无法复现——Node 型对象走原生 is_class 不崩，泄露只表现为「类名为空」不崩；use-after-free 非确定，时崩时不崩。
 - **产出**：`doc_ai/PLAN_GDSL_8H.md`（8h 计划）、`gdsl/example/leak.gd|tscn`（泄露复现）、`gdsl/example/unload_repro.gd|tscn`（确定性复现）、`gdsl/example/self_rule.gdextension`（manifest）。引擎源码已 revert 干净，无未验证的修复残留。
@@ -308,7 +309,75 @@
 
 ---
 
-## 这个项目如何教 vibe coding with AI
+## Era 22 — Direction 5：String 字段 + StringName 泄漏 + manifest 一致性
+
+| ME | YOU |
+|---|---|
+| 「go 方向 5（String 字段 + StringName 泄漏 + manifest 一致性）」 | 源码核实后落地：① 修 String 默认值双层引号 bug（`""hero""` → C 语法错，会导致任何带 String 默认值的 .gdsl 编译失败）；② String 字段补 getter/setter/property（重载保留，不再静默丢默认值）；③ 信号名 StringName 静态单次创建（测试断言，无 per-emit 泄漏）；④ 修 manifest 一致性 bug。 |
+
+- **ABI 墙坐实（源码非猜测）**：4.7 `gdextension_interface.json` 的 `interface` 只有 `variant_destroy`/`object_destroy`，**无 `string_destroy`/`string_name_destroy`**；且 `VariantTypeConstructor<String>` 是 `memnew_placement`（`variant_internal.h:990-1006`）——copy-construct 源 / placement-new 到 dest。⇒ 任何 Variant↔String 封送都泄漏一个引用计数，无法释放。这是「String 字段保留 = 接受有界泄漏」的根因（D14，同 `variant_new_string_name`/`object_get_instance` 类 ABI 墙）。
+- **决策 D14**：String 字段走「保留 + 记录有界泄漏」（与 int/float/bool/Named 行为一致），泄漏 = 每次重载 getter/setter 各一个 transient String（开发期、几十字节），不作无界工程绕过。
+- **决策 D15（干净 ownership，只有 transient 泄漏）**：constructor 用 `gdsl_mem_alloc(sizeof(lit))+memcpy` 拷贝默认值（不用只读字面量，避免 setter/free 撞字面量）；destructor `gdsl_mem_free`；setter free-old-then-alloc-new。字段 buffer 本身零泄漏。
+- **修双层引号 bug**：`parse_state_field` 把 `default_value` 存成原始 token（含引号），`default_literal` 的 String 分支别再包一层 → `self->name = "hero";`。
+- **manifest 一致性（D16）**：任何加载 gdsl DLL 的 `.gdextension` **必须** `reloadable = true`（否则引擎不开实例追踪，`_clear_extension` 关机 segfault 修复不生效）。`target_only.gdextension` 缺这行（named/self_rule 有），已补；三个 manifest 现一致（reloadable=true + entry_symbol=gdsl_library_init + dll 路径对齐）。
+- **StringName 泄漏**：信号名 StringName 本就 `p_is_static=true` 单次创建（免析构、程序周期复用），helper 只引用缓存不新建；无 per-emit 泄漏。无 string_destroy 的固有 refcount 泄漏是 ABI 限制，记录在 cerebrum「ABI walls」。
+- **验证**：`gdsl/test.ps1` = **92 用例 / 381 断言全绿**（原 89/353，+3 用例 / +28 断言）；String 字段样例子串断言（无双层引号 / constructor alloc / setter 类型检查 / property 注册 / API 缓存）；String 样例经 `cl /LD` 编成 DLL 通过（双引号 bug 修复 + String 封送语法全合法）；`_regen_all` 全部 8 个样例 .c 重生成并 `cl /LD` 编 DLL 全通过。
+- **真机往返验证（`.godot-bin/Godot_v4.7-rc3_win64_console.exe`，孤立项目 `gdsl/example/string_test/`，类名用 `Hero` 避开与其他扩展的 `Player` 撞名）**：`Hero.new()` → 设 `hp=7`、`nickname="aria"` → `reload_extension("res://string_fields.gdextension")` → 打印 `after reload: hp=7 nickname=aria nick_same=(true)`，reload status=0，exit=0。**3/3 确定性通过**。再释放 `p.free()` → `freed ok`，无 ObjectDB 泄漏警告 → **String 字段 buffer 在对象销毁时正确释放（D15 干净 ownership 真机证明），String 状态重载保留（D14 从代码生成推到运行时）**。这是 String 往返从「8/10（只证了编译 + 正常路径）」提级到「真机往返绿」。
+- **诚实边界**：主题材（`Hero` 非 `Player`、string_test 孤立项目）——真机验证只覆盖「String 字段在同一进程重载保留 + buffer 释放」；跨进程重启、超长/多字节 UTF-8 字符串、StringName 字段等未覆盖。`string_to_utf8_chars` 的 len 查询语义已对照引擎实现（`gdextension_interface.cpp:978-990`，len 不含尾 null，故 alloc len+1）。
+- **产出**：`codegen_logic.cpp`（String 字段全链路 + API 缓存）、`test_codegen.cpp`（+3 用例）、`target_only.gdextension`（补 reloadable=true）、`example/*.c`（8 个重生成）、`example/string_test/`（真机 String 往返回归：gdsl/gdextension/gd/project.godot/c）。引擎侧未动。
+- **待办**：Gap B（ClassDB 名表校验 @extends）仍暂停；segfault 归另一 agent；String 超长/多字节 UTF-8 + StringName 字段真机验证留待后续（String 基础往返已绿）。
+
+## Era 23 — Gap B：ClassDB @extends 校验（把「幻觉」提前成编译错）
+
+| ME | YOU |
+|---|---|
+| 「go gap B」 | 实现 `@extends <base>` 的 ClassDB 名表校验：`type X @extends NotARealClass` 在 typecheck 层拒绝、报错点名违规基类名，而不是让 `classdb_construct_object(NotARealClass)` 在运行时崩。 |
+
+- **问题**：`@extends` 后的基类名此前**不做任何校验**。LLM 写 `@extends Node2Dd`（大小写错）、`@extends FooBar`（编造）照样放行，生成的 C 也编过；到引擎加载才崩/报错。这是「幻觉→运行时崩」，违反项目的 reject-not-retry 方针。
+- **来源（关键）**：`extension_api.json` 在**本仓库根**（`./extension_api.json`，不是 `core/extension/`——它是 `--dump-extension-api` 产物，`core/extension/` 只有 `gdextension_interface.json` = ABI）。它有 `classes`（1036 个 ClassDB 注册类，每个含 `name`/`inherits`/`is_instantiable`）。
+- **设计 D17**：类名表 **vendored 成生成的 `gdsl/godot_classes.h`**（排序数组 + 二分查找 `is_godot_class`），而不是 gdslc 每次读 7MB json——后者会拖垮秒级 harness（doctest 每次 typecheck 都解析一遍 json 无法接受）。生成脚本 `gdsl/gen_godot_classes.py` 从 `extension_api.json` 再生，内容幂等，引擎升版本时重跑。
+- **范围（v1 克制）**：只校验 `@extends` 在 `classes` 表里**真实存在**；不校验 `is_instantiable`（避免误杀 abstract 但合法的基类，如 Node/Object/RefCounted）。`@extends <GDSL类型>`（如 `@extends Bullet`）会被拒绝——正确，GDSL 类型不是 Godot 基类。
+- **验证**：`gdsl/test.ps1` = **96 用例 / 397 断言全绿**（原 92/381，+4 用例：真基类 accept / 幻觉基类 reject / typos reject / GDSL 类型当基类 reject）。CLI 层：`gdslc logic` 对 `@extends FooBar` → `typecheck error: type 'Player': @extends 'FooBar' is not a real Godot class` rc=1；对 `@extends Node2D` → emit OK。全部 8 个 example + string_test 样例过 typecheck（无回归）。
+- **诚实边界**：校验列表来自根 `extension_api.json`（4.7-rc3 dump），版本锁定内有效；引擎版本漂移需 `gen_godot_classes.py` 重生成。`is_instantiable`/`is_abstract` 未查（只拦「不存在」，不拦「抽象但不该直接 extends」）。
+- **产出**：`gdsl/godot_classes.h`（生成）、`gdsl/gen_godot_classes.py`（生成器）、`gdsl/typecheck.cpp`（+`is_godot_class` 校验）、`gdsl/test_typecheck.cpp`（+4 用例）。引擎侧未动。
+
+## Era 24 — 010 LLM 收敛度量：gdsl 的「LLM 友好」第一次有了数字
+
+| ME | YOU |
+|---|---|
+| 「下一步走 010 LLM 收敛度量… go」「just use claude headless for the LLM run」 | 建 `gdsl/toolchain/llm_conv_bench.py`：冷测（Claude 只看「语法参考 + K 个 few-shot + 任务」，禁工具纯生成），用 `gdslc logic`（parse+typecheck）判有效，失败把报错回喂。4 个任务 × K{0,1} 实测。 |
+
+- **结果（真实跑，非感觉）**：**8/8 全部 first-try valid**（4 任务 basic_int/float_accel/string_name/target_emit × K{0,1}），`mean_iterations_to_valid=1.0`，`valid_rate=1.00`。所有输出**语义也对**（basic_int/float_accel/string_name 逐字对上 spec；target_emit 含 `then target.hp -= 1, emit(hit)`，重新跑确认 full 输出含 emit）。
+- **few-shot 敏感性 = 0**：K=0（无示例，只有语法参考）与 K=1（1 个示例）都是 1.00 —— 对这个模型，**语法参考本身就自解释**，加示例不改变 first-try（本来就近 100%）。
+- **方法（公正性）**：`claude -p`（native `claude.exe`，非 .cmd 垫片——subprocess 无法 CreateProcess 解析 .cmd）；`--allowedTools ''` 禁工具，`--max-turns 1` 纯生成；workdir 空目录（无 CLAUDE.md）；语法参考由我按 parser/typecheck 对拍写（含 string 双引号、emit 语法、string 默认用双引号这条是我补的，避免因没示例就测出假失败）。
+- **成本/耗时**：完整跑 8 call ≈ **$1.59**、141s（首轮全 valid → 无二次迭代）；加 pilot + target_emit 复验 ≈ 共 **$2.0**、total ~5 min。
+- **回归**：`gdsl/test.ps1` = 96/397 全绿（harness 与内核无关，零引擎改动）。
+- **诚实边界（重要）**：
+  1. **模型是 `deepseek-v4-flash-vision-exp`**（用户的 `claude` 配置路由到它），不是 Claude 本体——测的是「这个模型」对 gdsl 的收敛，不是「Claude 模型」。
+  2. 这是**强模型**；8/8 不证明弱模型也能，只证明语言本身可被强模型一次写对。
+  3. **样本小**：4 个配方任务、每个 1 次。8/8 巧合概率低但存在；re-run 取均值才稳。
+  4. **bar = 编译期有效**（parse+typecheck 过，且我逐任务核了语义 on-target），**不是运行时正确**（需引擎场景断言，属 009）。
+  5. 任务都是**简单配方**（单 type / 单 rule），没测复杂游戏逻辑。这回答的是「LLM 能不能用 gdsl 写配方」，不是「gdsl 能否表达复杂游戏」。
+- **结论（直接回应 Era 16）**：「LLM 友好」在编译期轴**有了实证**——强 LLM 零示例 first-try 写对全部配方。但「gdsl 友好」≠「gdsl 做得出游戏」：仍需 playtest 反馈闭环（FR-011）来测「写对了能跑出什么」。
+- **产出**：`gdsl/toolchain/llm_conv_bench.py`、`doc_ai/PLAN_GDSL_010.md`、`gdsl/bench_results.json`。引擎侧未动。
+
+## Era 25 — A（010 扩样本）+ B（FR-011 playtest 闭环）
+
+| ME | YOU |
+|---|---|
+| 「both」（A 扩样本 + B playtest 反馈闭环） | A：把 010 扩到 8 任务（4 简易 + 4 复合）实测；B：建 `gdsl/toolchain/playtest.py`，把 .gdsl 配方跑到真引擎里验证「规则真的执行」。 |
+
+- **A 结果**：**16/16 first-try valid**（8 任务 × K{0,1}），valid_rate=1.00，mean_iterations=1.0，few-shot 敏感性=0，cost ≈ **$3.18**、wall 440s。**复合任务也没打破 100%**——multi_rule_self（双规则）、float_emit（float+emit）、string_with_rule（string+int 规则共存）、two_types_cross（两类型各带规则 + 跨参与者）全 first-try 对。⇒ 组合不降低 LLM 友好度（至少对这个模型）。
+- **B（playtest 闭环）**：`playtest.py` 走完整管线 `.gdsl → gdslc → .c → cl /LD → .dll → .gdextension → Godot 引擎`，用 GDScript 断言脚本验证**运行时行为**。3 个配方真机验证**全 PASS**：
+  - `basic_int`：Player.new() → p.hp=3 → p.take_damage() → **hp=2**（self 规则执行）
+  - `float_accel`：speed=300.4 → p.accel() → **speed=305.4**（float += 规则执行）
+  - `target_emit`：Bullet.on_hit(Player) → **p.hp 3→2**（跨参与者 target 规则执行，经 instance binding 解析目标 C struct）
+- **意义（回应用户「B 才是 Era 16 那半」）**：之前 gdsl 只证到「编译期有效」；现在证到「**写对的配方确实在引擎里按预期执行**」——规则会触发、字段会变、跨参与者 target 能取回。这就是 playtest 反馈闭环的「跑」这一半（编译+playtest 双绿）。剩下半是**把这个跑的结果反馈给 LLM**（玩错了→回喂→改）——那是把 playtest.py 接进 llm_conv_bench.py 的迭代循环里。
+- **honest 边界**：playtest 只验证了**规则触发器 + 字段变更**路径，没验证 signal 连接/发射（emit 只在 010 编译期 + 结构上过了；运行时观察 signal 需要类声明 signal + connect，超出本轮）；没验证超长/多字节 string 运行时；只有 3 个配方真机，没全量 8 个（复合配方运行时验证留待扩展）。
+- **回归**：`gdsl/test.ps1` = 96/397 全绿；引擎侧零改动（playtest.py 只用已有管线，不碰 gdextension.cpp）。
+- **产出**：A=`llm_conv_bench.py`（+复合任务）+`bench_results.json`；B=`gdsl/toolchain/playtest.py` + `gdsl/playtest_cases/{basic_int,float_accel,target_emit}.gdsl|.gd`（3 个真机断言样例）。
+- **闭环收尾（loop_bench.py）**：把 playtest 接进 LLM 循环 —— `converge()` 每 cycle：LLM 产出 → `gdslc` 编译 → 自动生成 playtest .gd（`gdsl_playgen.py` 从配方解析 type/rule/guard/effect）→ 真引擎跑 → `RESULT ALLPASS` 才算收敛，否则把 FAIL 行回喂。实测 **basic_int + float_accel 各在 1 cycle 收敛**（compile 失败=0、playtest 失败=0），wall 84s、~$0.42。**完整闭环连上了：LLM 写对 → 编译过 → 引擎里规则真的执行 → 收敛**。
+- **loop 的 honest 边界（重要）**：自动 playtest 是**「规则自身 effect 是否真的执行」校验器**——生成器会强制满足 guard（把 guard 字段设到满足比较的值），所以只要 codegen 正确它就恒 PASS。它**不校验「规则是否符合 prose spec」**（那需要 per-task 期望值；3 个 sampled 配方我已人工核实语义 on-target）。FAIL→fix 分支只在 codegen/运行时 bug 时触发（当前 codegen 正确 → 不触发）。所以这环是「确认配方真的跑对」的验证器，不是「捉语义错」的抓虫器。
 
 ### 人的工作（decide, correct, kill）
 

@@ -19,6 +19,7 @@ static const char *variant_type(ValueType t) {
 		case ValueType::Int: return "GDEXTENSION_VARIANT_TYPE_INT";
 		case ValueType::Float: return "GDEXTENSION_VARIANT_TYPE_FLOAT";
 		case ValueType::Bool: return "GDEXTENSION_VARIANT_TYPE_BOOL";
+		case ValueType::String: return "GDEXTENSION_VARIANT_TYPE_STRING";
 		default: return nullptr;
 	}
 }
@@ -31,13 +32,14 @@ static std::string c_field_type(const TypedField &f) {
 	return c_scalar_type(f.type);
 }
 
-// 字段默认值的 C 字面量。Named → NULL；String → 加引号；其余原样。
+// 字段默认值的 C 字面量。Named → NULL；String → 原样返回（default_value 已含引号，别再包一层防双层引号）；其余原样。
 static std::string default_literal(const TypedField &f) {
 	if (f.type == ValueType::Named) {
 		return "NULL";
 	}
 	if (f.type == ValueType::String) {
-		return "\"" + f.default_value + "\"";
+		// parser 把 default_value 存成原始 token（含引号），它本身就已是合法 C 引号字面量。
+		return f.default_value;
 	}
 	return f.default_value;
 }
@@ -139,6 +141,8 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;\n";
 	out += "static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;\n";
 	out += "static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;\n";
+	out += "static GDExtensionInterfaceStringNewWithUtf8Chars gdsl_string_new;\n";
+	out += "static GDExtensionInterfaceStringToUtf8Chars gdsl_string_to_utf8_chars;\n";
 	out += "\n";
 	out += "static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {\n";
 	out += "\tgdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address(\"string_name_new_with_latin1_chars\");\n";
@@ -159,14 +163,24 @@ std::string emit_c(const TypedProgram &prog) {
 	out += "	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address(\"get_variant_to_type_constructor\");\n";
 	out += "	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address(\"classdb_unregister_extension_class\");\n";
 	out += "	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address(\"classdb_register_extension_class_property\");\n";
+	out += "	gdsl_string_new = (GDExtensionInterfaceStringNewWithUtf8Chars)p_get_proc_address(\"string_new_with_utf8_chars\");\n";
+	out += "	gdsl_string_to_utf8_chars = (GDExtensionInterfaceStringToUtf8Chars)p_get_proc_address(\"string_to_utf8_chars\");\n";
 	out += "}\n";
 	out += "\n";
 
-	// ---- StringName / Variant 占位 ----
+	// ---- StringName / Variant / String 占位 ----
+	// StringName 是 refcounted intern 表项（8 字节），String 是 CowData 指针（8 字节）。
+	// 两者都用 union 保证 8 字节对齐（memnew_placement 需要正确对齐）。
 	out += "/* StringName opaque holder (64-bit build: 8 bytes). */\n";
 	out += "typedef struct {\n";
 	out += "	uint8_t data[8];\n";
 	out += "} gdsl_StringName;\n";
+	out += "\n";
+	out += "/* String opaque holder (64-bit build: 8 bytes, 8-aligned for memnew_placement). */\n";
+	out += "typedef union {\n";
+	out += "	uint64_t align_;\n";
+	out += "	uint8_t data[8];\n";
+	out += "} gdsl_String;\n";
 	out += "\n";
 	out += "/* Variant opaque holder (single-precision 64-bit build: 24 bytes, 8-aligned). */\n";
 	out += "typedef union {\n";
@@ -240,11 +254,24 @@ std::string emit_c(const TypedProgram &prog) {
 		out += "\n";
 		out += "static void " + pfx + "_constructor(" + t.name + " *self) {\n";
 		for (const TypedField &f : t.fields) {
-			out += "\tself->" + f.name + " = " + default_literal(f) + ";\n";
+			if (f.type == ValueType::String) {
+				// String 字段用 gdsl_mem_alloc 拷贝默认值（不用字面量，避免 setter/free 撞只读字面量）。
+				// sizeof(lit) 是编译器算的值长（含转义 + 尾 null），memcpy 精确拷贝，无越界。
+				const std::string lit = default_literal(f);
+				out += "	self->" + f.name + " = (char *)gdsl_mem_alloc(sizeof(" + lit + "));\n";
+				out += "	memcpy(self->" + f.name + ", " + lit + ", sizeof(" + lit + "));\n";
+			} else {
+				out += "	self->" + f.name + " = " + default_literal(f) + ";\n";
+			}
 		}
 		out += "}\n";
 		out += "\n";
 		out += "static void " + pfx + "_destructor(" + t.name + " *self) {\n";
+		for (const TypedField &f : t.fields) {
+			if (f.type == ValueType::String) {
+				out += "	if (self->" + f.name + ") gdsl_mem_free(self->" + f.name + ");\n";
+			}
+		}
 		out += "}\n";
 		out += "\n";
 		out += "static GDExtensionObjectPtr " + pfx + "_create_instance(void *p_class_userdata, GDExtensionBool p_notify_postinitialize) {\n";
@@ -321,6 +348,50 @@ std::string emit_c(const TypedProgram &prog) {
 				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
 				out += "	GDExtensionObjectPtr obj = *(GDExtensionObjectPtr *)p_args[0];\n";
 				out += "	self->" + f.name + " = (obj != NULL) ? (" + ty + " *)gdsl_object_get_instance_binding(obj, gdsl_library, &gdsl_binding_callbacks) : NULL;\n";
+				out += "}\n";
+				out += "\n";
+				continue;
+			}
+			// String field (char *): marshal as STRING Variant. ABI 无 string_destroy，
+			// 封送会产生一个 transient String（有界泄漏，见 cerebrum ABI 墙记录）；字段 buffer 本身干净 ownership。
+			if (f.type == ValueType::String) {
+				const std::string getter = pfx + "_get_" + f.name;
+				const std::string setter = pfx + "_set_" + f.name;
+				out += "static void " + getter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	gdsl_String tmp;\n";
+				out += "	gdsl_string_new((GDExtensionUninitializedStringPtr)&tmp, self->" + f.name + " ? self->" + f.name + " : \"\");\n";
+				out += "	GDExtensionVariantFromTypeConstructorFunc ctor = gdsl_get_variant_from_type_constructor(GDEXTENSION_VARIANT_TYPE_STRING);\n";
+				out += "	ctor((GDExtensionUninitializedVariantPtr)r_return, (GDExtensionTypePtr)&tmp);\n";
+				out += "}\n";
+				out += "static void " + getter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	gdsl_string_new((GDExtensionUninitializedStringPtr)r_ret, self->" + f.name + " ? self->" + f.name + " : \"\");\n";
+				out += "}\n";
+				out += "static void " + setter + "_call(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	if (gdsl_variant_get_type((GDExtensionConstVariantPtr)p_args[0]) != GDEXTENSION_VARIANT_TYPE_STRING) {\n";
+				out += "		return;\n";
+				out += "	}\n";
+				out += "	gdsl_String tmp;\n";
+				out += "	GDExtensionTypeFromVariantConstructorFunc to_type = gdsl_get_variant_to_type_constructor(GDEXTENSION_VARIANT_TYPE_STRING);\n";
+				out += "	to_type((GDExtensionUninitializedTypePtr)&tmp, (GDExtensionVariantPtr)p_args[0]);\n";
+				out += "	GDExtensionInt len = gdsl_string_to_utf8_chars((GDExtensionConstStringPtr)&tmp, NULL, 0);\n";
+				out += "	char *buf = (char *)gdsl_mem_alloc((size_t)len + 1);\n";
+				out += "	gdsl_string_to_utf8_chars((GDExtensionConstStringPtr)&tmp, buf, len);\n";
+				out += "	buf[len] = 0;\n";
+				out += "	if (self->" + f.name + ") gdsl_mem_free(self->" + f.name + ");\n";
+				out += "	self->" + f.name + " = buf;\n";
+				out += "}\n";
+				out += "static void " + setter + "_ptr(void *p_method_userdata, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args, GDExtensionTypePtr r_ret) {\n";
+				out += "	" + t.name + " *self = (" + t.name + " *)p_instance;\n";
+				out += "	GDExtensionConstStringPtr src = (GDExtensionConstStringPtr)p_args[0];\n";
+				out += "	GDExtensionInt len = gdsl_string_to_utf8_chars(src, NULL, 0);\n";
+				out += "	char *buf = (char *)gdsl_mem_alloc((size_t)len + 1);\n";
+				out += "	gdsl_string_to_utf8_chars(src, buf, len);\n";
+				out += "	buf[len] = 0;\n";
+				out += "	if (self->" + f.name + ") gdsl_mem_free(self->" + f.name + ");\n";
+				out += "	self->" + f.name + " = buf;\n";
 				out += "}\n";
 				out += "\n";
 				continue;

@@ -35,6 +35,8 @@ static GDExtensionInterfaceObjectGetInstanceBinding gdsl_object_get_instance_bin
 static GDExtensionInterfaceGetVariantToTypeConstructor gdsl_get_variant_to_type_constructor;
 static GDExtensionInterfaceClassdbUnregisterExtensionClass gdsl_classdb_unregister_extension_class;
 static GDExtensionInterfaceClassdbRegisterExtensionClassProperty gdsl_classdb_register_extension_class_property;
+static GDExtensionInterfaceStringNewWithUtf8Chars gdsl_string_new;
+static GDExtensionInterfaceStringToUtf8Chars gdsl_string_to_utf8_chars;
 
 static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address) {
 	gdsl_string_name_new = (GDExtensionInterfaceStringNameNewWithLatin1Chars)p_get_proc_address("string_name_new_with_latin1_chars");
@@ -55,12 +57,20 @@ static void gdsl_load_api(GDExtensionInterfaceGetProcAddress p_get_proc_address)
 	gdsl_get_variant_to_type_constructor = (GDExtensionInterfaceGetVariantToTypeConstructor)p_get_proc_address("get_variant_to_type_constructor");
 	gdsl_classdb_unregister_extension_class = (GDExtensionInterfaceClassdbUnregisterExtensionClass)p_get_proc_address("classdb_unregister_extension_class");
 	gdsl_classdb_register_extension_class_property = (GDExtensionInterfaceClassdbRegisterExtensionClassProperty)p_get_proc_address("classdb_register_extension_class_property");
+	gdsl_string_new = (GDExtensionInterfaceStringNewWithUtf8Chars)p_get_proc_address("string_new_with_utf8_chars");
+	gdsl_string_to_utf8_chars = (GDExtensionInterfaceStringToUtf8Chars)p_get_proc_address("string_to_utf8_chars");
 }
 
 /* StringName opaque holder (64-bit build: 8 bytes). */
 typedef struct {
 	uint8_t data[8];
 } gdsl_StringName;
+
+/* String opaque holder (64-bit build: 8 bytes, 8-aligned for memnew_placement). */
+typedef union {
+	uint64_t align_;
+	uint8_t data[8];
+} gdsl_String;
 
 /* Variant opaque holder (single-precision 64-bit build: 24 bytes, 8-aligned). */
 typedef union {

@@ -104,3 +104,9 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+
+## Session: 2026-09-01 (Gap A)
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| — | Gap A：typecheck 字面量/类型 coercion——classify_literal + literal_matches，三处落闸（state default / guard.value / effect.value），find_field 取代 has_field；+5 红绿用例 | gdsl/typecheck.cpp, gdsl/test_typecheck.cpp | green（88 用例 / 350 断言） | ~2500 |

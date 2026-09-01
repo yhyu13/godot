@@ -6,4 +6,4 @@ reloadable = true
 
 [libraries]
 
-windows.x86_64 = "res://target_only.dll"
+windows.x86_64 = "res://string_fields.dll"

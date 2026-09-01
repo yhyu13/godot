@@ -1,0 +1,36 @@
+[
+  {
+    "task": "basic_int",
+    "k": 0,
+    "converged": true,
+    "cycles": 1,
+    "log": [
+      {
+        "cycle": 1,
+        "stage": "playtest",
+        "ok": true,
+        "fails": [],
+        "output": "Godot Engine v4.7.rc3.official.645638db9 - https://godotengine.org\n\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | Started 项目初始化 (5 steps)\u001b[39m\u001b[0m\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在扫描文件结构……\u001b[39m\u001b[0m\n[  16% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在加载全局类名……\u001b[39m\u001b[0m\n[  33% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在校验 GDExtension……\u001b[39m\u001b[0m\n[  50% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在创建自动加载脚本……\u001b[39m\u001b[0m\nPASS owner hp -1\nRESULT ALLPASS\n[  66% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在初始化插件……\u001b[39m\u001b[0m\n[  83% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在启动文件扫描……\u001b[39m\u001b[0m\n\u001b[92m[ DONE ]\u001b[39m \u001b[1mfirst_scan_filesystem\u001b[22m\n\u001b[0m\nWARNING: Scan thread aborted...\n   at: _notification (editor/file_system/editor_file_system.cpp:1757)\n"
+      }
+    ],
+    "gsdl": "type Player @extends CharacterBody2D\n    state:\n        hp: int = 3\n    rule TakeDamage by Player:\n        when self.hp > 0\n        then self.hp -= 1",
+    "cost": 0.19219999999999998
+  },
+  {
+    "task": "float_accel",
+    "k": 0,
+    "converged": true,
+    "cycles": 1,
+    "log": [
+      {
+        "cycle": 1,
+        "stage": "playtest",
+        "ok": true,
+        "fails": [],
+        "output": "Godot Engine v4.7.rc3.official.645638db9 - https://godotengine.org\n\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | Started 项目初始化 (5 steps)\u001b[39m\u001b[0m\n[   0% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在扫描文件结构……\u001b[39m\u001b[0m\n[  16% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在加载全局类名……\u001b[39m\u001b[0m\n[  33% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在校验 GDExtension……\u001b[39m\u001b[0m\n[  50% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在创建自动加载脚本……\u001b[39m\u001b[0m\nPASS owner speed +5\nRESULT ALLPASS\n[  66% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在初始化插件……\u001b[39m\u001b[0m\n[  83% ] \u001b[90m\u001b[1mfirst_scan_filesystem\u001b[22m | 正在启动文件扫描……\u001b[39m\u001b[0m\n\u001b[92m[ DONE ]\u001b[39m \u001b[1mfirst_scan_filesystem\u001b[22m\n\u001b[0m\nWARNING: Scan thread aborted...\n   at: _notification (editor/file_system/editor_file_system.cpp:1757)\n"
+      }
+    ],
+    "gsdl": "type Player @extends CharacterBody2D\n    state:\n        speed: float = 300.4\n        hp: int = 3\n    rule Accel by Player:\n        when self.hp > 0\n        then self.speed += 5",
+    "cost": 0.210075
+  }
+]
