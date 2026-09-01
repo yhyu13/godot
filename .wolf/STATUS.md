@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work. Read this FIRST when starting a session.
 > Update this file at the end of every work phase so the next `/clear` resumes in 1 read.
-> Last updated: 2026-08-31
+> Last updated: 2026-09-01
 
 ---
 
@@ -23,6 +23,8 @@
 - **S6.2c 跨参与者 target codegen**：`rule <Name> by <Owner> [target <Type>]:` 显式声明碰撞对手方类型（D6）。`target.<field>` 解析进 Guard/Effect 的 `RefOwner::Target`，typecheck 按 ref 选 owner（self→by 类型 / target→target 类型）校验字段存在性并拒绝「引 target 却无 target 子句」。codegen 把规则方法扩成带 `GDExtensionObjectPtr p_target` 参数（`argument_count=1` + OBJECT `arguments_info`/class_name），经 instance binding（`object_set_instance_binding`/`object_get_instance_binding`）取回 target 的 C struct（D7：ABI 无 `object_get_instance`，binding 是唯一取回路径；free_callback 置 NULL 避免与 `free_instance_func` 双重释放）；`_call` 用 `get_variant_to_type_constructor(OBJECT)` 从 Variant 解 Object、`_ptr` 直接解 `*(GDExtensionObjectPtr*)p_args[0]`。生成 C 经 stub ABI 头 `cl /c` 语法编译通过。
 - **测试**：83 用例 / 335 断言全绿；harness `gdsl/test.ps1` 13 文件（6 test + 7 源）
 - **S6.3 真机集成 bug 修复（两个）**：① emit_signal 兼容哈希 **2866548813 → 4047867050 (0xF1458CAA)**——根因是 emit_signal 的 MethodInfo 有 Error 返回值（`object.cpp:1151` `_emit_signal` 返回 Error → `create_vararg_method_bind` 从签名推导 return type INT + class_name "Error"，`type_info.h:247-256`），手写 mi（`object.cpp:1866`）漏 return_val 导致哈希错 → `classdb_get_method_bind` 返 nullptr。真机 `--dump-extension-api` 对拍验证。② `GDExtensionPropertyInfo.hint_string` 传 NULL → 引擎 `PropertyInfo(const GDExtensionPropertyInfo&)`（`property_info.h:168`）无条件解引用崩溃；改成指向零初始化 `gdsl_empty_string[8]`。route B 真机跑通：`.gdsl` → 生成 C → `cl` 编 `.dll` → `.gdextension` → 引擎加载，初始化阶段全部通过。
+- **退出阶段 segfault（EXIT 139）确认修复（2026-09-01 实测）**：最小复现（加载含方法 GDExtension + 退出）在官方 rc3（`.godot-bin/`）与 fork release-editor 构建上都 exit 0（各 5/5 连跑）。修复本体 = 54864dd（`_unregister_extension_class` 无条件 `_clear_extension`，`gdextension.cpp:744`）。
+- **unload→free 崩溃 = 非 editor 模式 artifact（2026-09-01 修正）**：早前误判「带修复仍崩」——实为 `--headless --path`（非 editor）跑出。链：`main.cpp:2222-2224` reloadable 仅 editor 开启 → `loader:217` reloadable=false → `gdextension.cpp:557-560` 追踪关闭 → `instances` 空 → `_clear_extension`(:744) 清空气 → `p.free()` 撞已卸载 DLL。非引擎 bug，勿作验收。记录 `doc_ai/SEGFAULT_UNLOAD_REPRO.md`、复现 `gdsl/toolchain/repro_unload_crash.ps1`。
 
 ---
 
@@ -30,7 +32,7 @@
 
 **Active spec:** `009-engine-integration`（SDD phase `specify`，见 `specs/009-engine-integration/spec.md`）
 
-**Goal:** S6 引擎集成（route B = GDExtension，设计文档 §2 定死）。route B 已跑通（`.gdsl` → 生成 C → `.dll` → `.gdextension` → 引擎加载，两个真机 bug 已修）。**当前硬仗 = 退出阶段 segfault（EXIT 139）**：任何注册了方法的 GDExtension 退出时都崩，最小 self-only 规则也崩；根因假设（DLL 卸载顺序 vs MethodBind 悬空指针）已提出，需先拿符号栈证实再定架构改法。
+**Goal:** S6 引擎集成（route B = GDExtension，设计文档 §2 定死）。route B 已跑通（`.gdsl` → 生成 C → `.dll` → `.gdextension` → 引擎加载，两个真机 bug 已修）。**退出阶段 segfault（EXIT 139）已确认修复**：普通退出最小复现（加载含方法 GDExtension + `--headless --quit`）在官方 rc3 与 fork 构建上都 5/5 exit 0（见 Done）。下一步：009 引擎集成完整验收（节点/连接数 == 配方 + rule effect 经 ptrcall 生效可观测）+ 010 LLM 接口度量（FR-006/007/008 harness）——后者才是「LLM 友好」的实证，目前是空的。
 
 ### Acceptance criteria
 1. ~~`emit_c` 补跨参与者 `target` 参数 codegen~~ ✅ S6.2c done（77 用例 319 断言绿）
@@ -71,7 +73,7 @@
 ## ⚠️ External blockers (don't block coding)
 
 - scons **已装**（4.11.1，`uv tool install scons`）——二进制在 `C:\Users\XINDONG\.local\bin\scons`（不在 PATH，用绝对路径或 `export PATH="$HOME/.local/bin:$PATH"`）。真机集成唯一硬前提 = 一个 Godot 引擎二进制（已就位于 `.godot-bin/`，已 gitignore）。
-- **退出阶段 segfault（EXIT 139，未修）**：任何注册了方法的 GDExtension 退出时都崩，最小 self-only 规则也崩，与 emit/target/connection/hint_string 无关。崩溃在 "loading_editor_layout DONE" 之后、CRT 静态析构阶段。最可信假设（未证实）：GDExtensionMethodBind 存着指向 DLL 的 call_func/ptrcall_func 指针，DLL 在 `ClassDB::cleanup()`（`class_db.cpp:2350`）之前被卸载 → 析构悬空。证据缺口：cdb 卡住、procdump/WER 没落盘，无真实调用栈。下一步用 gflags `+hpa` + AEDebug 抓栈，或改方法注册不依赖 DLL 卸载顺序——拿到栈再定，不猜。
+- **退出阶段 segfault：已修复**（普通退出 5/5 exit 0，见 Done）。非 editor 模式的 unload→free 崩为 artifact（reloadable 仅 editor 开启），不作阻塞。详见 `doc_ai/SEGFAULT_UNLOAD_REPRO.md`。
 
 ---
 
