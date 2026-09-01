@@ -111,7 +111,13 @@ static bool literal_matches(ValueType field_type, const std::string &literal, st
 			why = "expected bool literal, got '" + literal + "'";
 			return false;
 		case ValueType::String:
-			return true; // v1：string 字段不参与规则层，default 任意
+			// FR-005: string 字段默认值必须是双引号字符串字面量；裸数字/标识符会被 codegen
+			// 当成字段赋值（`self->name = 123;` 对 char* 是错/失效代码），故在此提前拒收。
+			if (k == LitKind::Other && literal.size() >= 2 && literal.front() == '"' && literal.back() == '"') {
+				return true;
+			}
+			why = "expected a double-quoted string literal, got '" + literal + "'";
+			return false;
 		case ValueType::Named:
 			if (k == LitKind::Null) {
 				return true;

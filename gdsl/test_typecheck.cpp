@@ -357,3 +357,38 @@ TEST_CASE("[GDSL] Gap B: reject @extends naming a GDSL type, not a Godot class")
 	CHECK_FALSE(err.empty());
 	CHECK(err.find("Bullet") != std::string::npos);
 }
+
+TEST_CASE("[GDSL] FR-005: reject numeric literal as a string field default") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    name: string = 123\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] FR-005: reject int literal as a string field default") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: string = 3\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+}
+
+TEST_CASE("[GDSL] FR-005: accept a quoted string default") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    nickname: string = \"hero\"\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	REQUIRE(gdsl::typecheck(prog, typed, err));
+	REQUIRE(typed.types.size() == 1);
+	REQUIRE(typed.types[0].fields.size() == 1);
+	CHECK(typed.types[0].fields[0].type == gdsl::ValueType::String);
+}
