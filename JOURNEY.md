@@ -409,6 +409,44 @@
 - **唯一剩下的增量**：把整套工具链（llm_conv_bench/playtest/golden/semfix_loop/scene_accept/scene_lifecycle + GDScript 生成坑）沉淀成一个可复用 Hermes skill，供别的引擎 DSL 复用这套「编译→真跑→语义→回喂→场景」闭环。
 - **自治教训（写死）**：小步、lane 内、有合理默认 → 直接做完再报，别用 `clarify` 停；只有真做不到/真判断（如金标准语义）才问。`approvals.mode` 是 Hermes 层的拦阻源，不是行为约束。
 
+## GDSL 问答（用户好问题，原样照录 + 答案）
+
+> 这些是开发过程中用户亲口问的、能帮后来人理解 gdsl 的好问题。问题原文保留，答案按当时实测/论证为准。
+
+**Q：编译一次要多久，gdsl大致长什么样，怎么表达玩法逻辑的？？**
+
+A：
+- **编译耗时（实测）**：`gdslc .gdsl→C` 单个配方 **~58ms**、8 个配方共 **400ms**（~50ms/个，纯编译器毫秒级）；`cl /LD` C→DLL **~1-3s**；**真机引擎加载跑 playtest ~30-60s**（editor headless 启动，这才是重头）。「秒级红绿」指配方→C + 单测；慢的是把生成物塞进引擎真跑。
+- **长这样**：
+  ```
+  type Player @extends CharacterBody2D   # 类型 + Godot 基类
+  state:                                  # 状态字段（类型 = 默认值）
+      hp: int = 3
+      speed: float = 300.4
+      nickname: string = "hero"
+      weapon: Weapon = null               # Named: 对象引用（另一类型）
+  rule TakeDamage by Player:              # 规则: 所有者 Player
+      when self.hp > 0                    # 守卫: 一个比较
+      then self.hp -= 1                   # 效果: 字段 赋值/加减
+  rule OnHit by Bullet target Player:     # 跨参与者: 子弹打玩家
+      when target.hp > 0
+      then target.hp -= 1, emit(hit)      # 效果 + 发信号
+  ```
+  字段类型 int/float/bool/string/另一个 type 名（对象引用，默认只能 null）；`@extends` 必须真 Godot 类（编译器查 `godot_classes.h`，写错编译报）。
+- **玩法逻辑 =「规则 = 守卫 + 效果」if-then 模型**：`when ref.field cmp literal`（守卫，单个比较）→ `then ref.field =/+=/-= literal`（改状态）或 `emit(信号)`（发事件）；`ref` = `self`（所有者实例）/`target`（跨参与者）/裸字段= self。每条 rule 编译成一个注册在类上的方法（如子弹类上的 `on_hit`），引擎/场景事件或逐帧调这些方法——状态在对象上，规则改状态并 emit 触发外部监听。**玩法 = 一堆「条件→改状态→发事件」的规则，对象间靠 `target` 互作用**。GDScript 是命令式代码，gdsl 是声明式配方（写错空间小、可编译期校验、可真跑）。
+
+**Q：gdsl是图灵完备的吗**
+
+A：**不是，而且这是故意的（设计特性）。** 图灵完备要三样，gdsl 都没有：
+1. **无界内存**——`state:` 是定长字段（int64/float/bool/string/对象引用）的固定 struct，无数组/动态分配；string 虽长但**语言里无字符串运算**（不拼接/索引/取长），只是不可计算的不透明数据。
+2. **循环/递归**——rule 一次性的（守卫→改状态→结束），effect 只能 `+= 字面量`/`emit`，**不能调用另一条 rule**，无 while/for。表达不了 `while x>0: x-=1`，只能靠外部（Godot 游戏循环）反复调用。
+3. **任意计算**——effect 只做字面量运算，守卫单比较（无 and/or）。
+
+所以它是**有限状态机（FSM）/ 产生式规则系统**：固定类型 + 定长状态 + 有限规则集 = 确定性状态转移，非通用计算。
+**故意不完备的原因**：gdsl 哲学就是固定 ontology/小语法/reject-not-retry/可校验>可表达——越图灵完备 LLM 能写的东西越复杂、幻觉面越大；限制成「只能填规则表」才是 LLM 友好。
+**关键澄清**：gdsl 长在图灵完备的 Godot 里——游戏循环/任意复杂逻辑由 **GDScript**（图灵完备）写；gdsl 只负责声明式规则层，**迭代是宿主（引擎）驱动**。所以「做得出游戏」= gdsl（规则层）+ GDScript（宿主逻辑）+ Godot（运行时）组合；gdsl 单独不是图灵机，但恰好把「LLM 最容易写错」的命令式逻辑换成「LLM 最不容易写错」的声明式规则。
+若加表达式/数组/递归/循环原语会让它图灵完备——但每加一样幻觉面大一块，与初衷背道而驰。
+
 ### 人的工作（decide, correct, kill）
 
 - **把纪律写进任务本身**：两次 AGENTS.md 任务都自带「Prefer executable sources of truth over prose」「When in doubt, omit」「improve in place rather than rewriting blindly」——这些不是口头要求，是写死的验收标准，直接决定了我对拍 `SConstruct` 并抓到过时说法（Era 3）。
