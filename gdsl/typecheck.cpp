@@ -101,7 +101,11 @@ static bool int_literal_fits_int64(const std::string &s) {
 	return true;
 }
 
-static bool literal_matches(ValueType field_type, const std::string &literal, std::string &why) {
+// allow_int_float_widen: 是否允许 int 字面量拓宽到 float 字段。
+// 赋值/默认值允许（5 存入 float 字段语义精确 5.0）；但 guard 比较必须类型精确——`when self.spd == 5`
+// 会把 int 隐式拓宽成 float 再比较，浮点值对整型字面量做 == 是静默精度语义风险（LLM_UNFRIENDLY #4
+// 「无隐式转换」政策）。比较路径传 false 强制写 5.0。
+static bool literal_matches(ValueType field_type, const std::string &literal, std::string &why, bool allow_int_float_widen = true) {
 	const LitKind k = classify_literal(literal);
 	switch (field_type) {
 		case ValueType::Int:
@@ -117,10 +121,13 @@ static bool literal_matches(ValueType field_type, const std::string &literal, st
 			why = "expected integer literal, got '" + literal + "'";
 			return false;
 		case ValueType::Float:
-			if (k == LitKind::Int || k == LitKind::Float) {
+			if (k == LitKind::Float) {
 				return true;
 			}
-			why = "expected numeric literal, got '" + literal + "'";
+			if (k == LitKind::Int && allow_int_float_widen) {
+				return true;
+			}
+			why = "expected float literal for float field, got '" + literal + "' (write it as a float, e.g. 5.0)";
 			return false;
 		case ValueType::Bool:
 			if (k == LitKind::Bool) {
@@ -245,7 +252,7 @@ bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 				return false;
 			}
 			std::string why;
-			if (!literal_matches(gf->type, tr.guard.value, why)) {
+			if (!literal_matches(gf->type, tr.guard.value, why, /*allow_int_float_widen=*/false)) {
 				err = "rule '" + r.name + "': " + why + " (guard '" + tr.guard.field + "')";
 				return false;
 			}

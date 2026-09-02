@@ -448,3 +448,22 @@ TEST_CASE("[GDSL] FR-005: reject int literal out of int64 range (int_overflow)")
 	CHECK_FALSE(err.empty());
 	CHECK(err.find("int64") != std::string::npos);
 }
+
+// FR-005 mutation guard (guard_type_mix): float 字段与 int 字面量做比较是 int→float 隐式拓宽。
+// 赋值/默认值允许拓宽（语义精确），但 guard 比较必须类型精确——浮点值对整型字面量做 == 是静默精度
+// 语义风险（LLM_UNFRIENDLY #4 「无隐式转换」政策）。typecheck 必须拒收并提示写成 5.0。
+TEST_CASE("[GDSL] FR-005: reject int literal widening against a float field in a guard (guard_type_mix)") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    spd: float = 1.5\n"
+			"\n"
+			"rule R by P:\n"
+			"    when self.spd == 5\n"
+			"    then self.spd += 1.0\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	CHECK(err.find("spd") != std::string::npos);
+}
