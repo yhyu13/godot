@@ -1,5 +1,7 @@
 #include "typecheck.h"
 #include "godot_classes.h"
+#include <cerrno>
+#include <cstdlib>
 #include <utility>
 
 namespace gdsl {
@@ -89,11 +91,27 @@ static LitKind classify_literal(const std::string &s) {
 }
 
 // 字面量是否兼容字段类型。v1 政策：无隐式转换，仅 int→float 拓宽；Named 仅 'null'。
+static bool int_literal_fits_int64(const std::string &s) {
+	errno = 0;
+	char *end = nullptr;
+	std::strtoll(s.c_str(), &end, 10);
+	if (end == s.c_str() || errno == ERANGE) {
+		return false;
+	}
+	return true;
+}
+
 static bool literal_matches(ValueType field_type, const std::string &literal, std::string &why) {
 	const LitKind k = classify_literal(literal);
 	switch (field_type) {
 		case ValueType::Int:
 			if (k == LitKind::Int) {
+				// FR-005 (int_overflow): int 字段在 codegen 里以 int64 存储；超出 int64 的字面量
+				// 会被原样发射成 C 整型字面量，溢出后存储值错误（wraps）。在此提前拒收。
+				if (!int_literal_fits_int64(literal)) {
+					why = "integer literal out of int64 range: '" + literal + "'";
+					return false;
+				}
 				return true;
 			}
 			why = "expected integer literal, got '" + literal + "'";
@@ -186,6 +204,14 @@ bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 		if (!is_declared(r.by, type_names)) {
 			err = "unknown trigger type '" + r.by + "' in rule '" + r.name + "'";
 			return false;
+		}
+		// FR-005 (dup_rule_name): 同一 owner 类型上两个同名 rule 会在 codegen 里注册两个同名方法，
+		// 属重复注册（哪个生效不确定 / 引擎报错）。在此对 (name, by) 重复拒收。
+		for (const TypedRule &er : out.rules) {
+			if (er.name == r.name && er.by == r.by) {
+				err = "duplicate rule '" + r.name + "' for type '" + r.by + "'";
+				return false;
+			}
 		}
 		const TypedType *owner = find_type(out.types, r.by);
 		const TypedType *target = nullptr;

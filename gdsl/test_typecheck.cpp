@@ -412,3 +412,39 @@ TEST_CASE("[GDSL] FR-005: accept a quoted string default") {
 	REQUIRE(typed.types[0].fields.size() == 1);
 	CHECK(typed.types[0].fields[0].type == gdsl::ValueType::String);
 }
+
+// FR-005 mutation guard (dup_rule_name): 同类型两个同名 rule 会注册两个同名方法，是真实正确性缺口，
+// codegen 会在同一个 class 上重复注册规则方法。typecheck 必须拒收。
+TEST_CASE("[GDSL] FR-005: reject duplicate rule name for the same owner (dup_rule_name)") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 3\n"
+			"\n"
+			"rule R by P:\n"
+			"    when self.hp > 0\n"
+			"    then self.hp -= 1\n"
+			"rule R by P:\n"
+			"    when self.hp < 5\n"
+			"    then self.hp += 1\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	// is_godot_class 分支先过（CharacterBody2D 真实存在），失败必须来自重复 rule 名。
+	CHECK(err.find("duplicate") != std::string::npos);
+}
+
+// FR-005 mutation guard (int_overflow): 超出 int64 的字面量会被 codegen 原样发射成 C 整型字面量，
+// 溢出后存储值错误（wraps 到别的数）。typecheck 必须做 int64 范围检查并拒收。
+TEST_CASE("[GDSL] FR-005: reject int literal out of int64 range (int_overflow)") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    hp: int = 99999999999999999999\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	CHECK(err.find("int64") != std::string::npos);
+}
