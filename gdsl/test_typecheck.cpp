@@ -467,3 +467,18 @@ TEST_CASE("[GDSL] FR-005: reject int literal widening against a float field in a
 	CHECK_FALSE(err.empty());
 	CHECK(err.find("spd") != std::string::npos);
 }
+
+// FR-005 mutation guard (bad_field_ident): 字段名以数字开头会被 codegen 原样写进 C 结构体
+// (int64_t 1hp; -> 非法 C 标识符，cl /c 必失败)。typecheck 必须对字段名做合法标识符校验并拒收。
+TEST_CASE("[GDSL] FR-005: reject a field name starting with a digit (bad_field_ident)") {
+	const gdsl::Program prog = parse(
+			"type P @extends CharacterBody2D\n"
+			"state:\n"
+			"    1hp: int = 3\n");
+	gdsl::TypedProgram typed;
+	std::string err;
+	CHECK_FALSE(gdsl::typecheck(prog, typed, err));
+	CHECK_FALSE(err.empty());
+	// 报错必须点名违规字段名。
+	CHECK(err.find("1hp") != std::string::npos);
+}

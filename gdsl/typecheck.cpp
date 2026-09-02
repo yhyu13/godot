@@ -155,6 +155,27 @@ static bool literal_matches(ValueType field_type, const std::string &literal, st
 	}
 }
 
+// 字段名会被 codegen 原样写进生成的 C 结构体（codegen_logic.cpp:279 `\t<T> <name>;`），
+// 必须是合法 C 标识符：首字符字母或下划线，后续字母/数字/下划线。否则产出非法 C（如 int64_t 1hp;）。
+// FR-005 (bad_field_ident)。
+static bool is_valid_c_ident(const std::string &s) {
+	if (s.empty()) {
+		return false;
+	}
+	for (size_t i = 0; i < s.size(); i++) {
+		const char c = s[i];
+		const bool letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+		if (i == 0) {
+			if (!(letter || c == '_')) {
+				return false;
+			}
+		} else if (!(letter || c == '_' || (c >= '0' && c <= '9'))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 	out.types.clear();
 	out.rules.clear();
@@ -187,6 +208,12 @@ bool typecheck(const Program &prog, TypedProgram &out, std::string &err) {
 					err = "duplicate field '" + f.name + "' in type '" + t.name + "'";
 					return false;
 				}
+			}
+			// FR-005 (bad_field_ident): 字段名必须是合法 C 标识符（首字符字母/下划线，不能数字开头）。
+			if (!is_valid_c_ident(f.name)) {
+				err = "type '" + t.name + "' field '" + f.name +
+						"': not a valid identifier (must start with a letter or '_' and contain only letters/digits/'_')";
+				return false;
 			}
 			TypedField tf;
 			tf.name = f.name;
