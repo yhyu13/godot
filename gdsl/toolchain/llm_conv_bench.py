@@ -35,10 +35,11 @@ def find_claude():
 
 CLAUDE = find_claude()
 
-GRAMMAR = """gdsl 是一个给 Godot 写游戏玩法的"配方"语言。一个 .gdsl 文件可含 1 到多个 type 声明，每个 type 可带 state 与 rule。
+GRAMMAR = """gdsl 是一个给 Godot 写游戏玩法的"配方"语言。一个 .gdsl 文件可含 1 到多个 type 声明，每个 type 可带 signals 与 state 与 rule。
 
 语法：
 type <Name> @extends <Godot基类名>
+    signals: <sig>[, <sig>...]     # 可选, 在 state: 之前, 声明该类型可 emit 的信号名
     state:
         <field>: <type> = <default>
     rule <RuleName> by <OwnerType> [target <TargetType>]:
@@ -51,6 +52,7 @@ type <Name> @extends <Godot基类名>
 - <ref> 是 self（规则所有者）或 target（跨参与者，需在 rule 头部写 target <TargetType>）。
 - <cmp> 是 > >= < <= == != 。
 - <effect> 是 ref.field = lit | ref.field += lit | ref.field -= lit | emit(<信号名>)。
+- **emit(<信号名>) 的信号名必须先在该 rule 的 by 类型的 signals: 行声明**（如 `signals: hit`），否则 typecheck 报错；emit 是零参、无参数列表。
 - @extends 必须是真实的 Godot 类（Node2D/Area2D/CharacterBody2D/Resource 等）。"""
 
 FEWSHOT_EXAMPLES = {
@@ -61,14 +63,17 @@ state:
 rule TakeDamage by Player:
     when self.hp > 0
     then self.hp -= 1""",
-    2: """type Player @extends Node2D
-state:
-    hp: int = 3
+    2: """type Bullet @extends Area2D
+    signals: hit
+    state:
+        damage: int = 1
+    rule OnHit by Bullet target Player:
+        when target.hp > 0
+        then target.hp -= 1, emit(hit)
 
-type Bullet @extends Area2D
-state:
-    damage: int = 1
-    owner: Player = null""",
+type Player @extends CharacterBody2D
+    state:
+        hp: int = 5""",
 }
 
 TASKS = [
@@ -108,6 +113,36 @@ TASKS = [
         "name": "two_types_cross",
         "kind": "complex",
         "spec": "一个子弹类型 Bullet 继承 Area2D，有整数伤害字段 damage 默认 1。规则 Fade：由 Bullet 触发，当 self 的 damage 大于 0 时，self 的 damage 减 1。一个玩家类型 Player 继承 CharacterBody2D，有整数生命字段 hp 默认 5。规则 OnHit：由 Bullet 触发，target 为 Player，当 target 的 hp 大于 0 时，target 的 hp 减 1，并发出信号 hit。",
+    },
+]
+
+
+# ---- harder set (2026-09-03): 难但可表达, 用于重启 C 收敛区分度 (各 spec 均有已验证的合法解) ----
+HARD_TASKS = [
+    {
+        "name": "cross_target_emit",
+        "kind": "hard",
+        "spec": "一个子弹类型 Bullet 继承 Area2D，声明信号 hit，有整数伤害字段 damage 默认 1。一个敌人类型 Enemy 继承 CharacterBody2D，有整数生命字段 hp 默认 8。规则 Hit：由 Bullet 触发，target 为 Enemy，当 target 的 hp 大于 0 时，target 的 hp 减 1，并发出信号 hit。",
+    },
+    {
+        "name": "multi_effect_float",
+        "kind": "hard",
+        "spec": "一个玩家类型 Player 继承 CharacterBody2D，声明信号 dash，有整数生命字段 hp 默认 3、浮点速度字段 speed 默认 100.0。规则 Dash：由 Player 触发，当 self 的 hp 大于 0 时，self 的 speed 加 25，并发出信号 dash。",
+    },
+    {
+        "name": "string_level",
+        "kind": "hard",
+        "spec": "一个角色类型 Hero 继承 Node2D，声明信号 leveled，有字符串昵称字段 nname 默认 'hero'、整数等级字段 lvl 默认 1。规则 LevelUp：由 Hero 触发，当 self 的 lvl 小于 5 时，self 的 lvl 加 1，并发出信号 leveled。",
+    },
+    {
+        "name": "three_rules_two_types",
+        "kind": "hard",
+        "spec": "一个玩家类型 Player 继承 CharacterBody2D，声明信号 jump、hit，有整数生命字段 hp 默认 3、整数跳跃字段 jumps 默认 0。规则 Jump：由 Player 触发，当 self 的 jumps 小于 2 时，self 的 jumps 加 1，并发出信号 jump。规则 Hit：由 Player 触发，当 self 的 hp 大于 0 时，self 的 hp 减 1，并发出信号 hit。还有一个敌人类型 Enemy 继承 Node2D，有整数生命字段 hp 默认 5。",
+    },
+    {
+        "name": "bool_guard",
+        "kind": "hard",
+        "spec": "一个门类型 Door 继承 Node2D，有布尔字段 open 默认 false、整数使用字段 uses 默认 0。规则 Open：由 Door 触发，当 self 的 uses 小于 3 时，self 的 uses 加 1。",
     },
 ]
 
@@ -245,9 +280,10 @@ def main():
     ap.add_argument("--ks", default="0,1", help="comma-separated few-shot counts")
     ap.add_argument("--max-iter", type=int, default=2)
     ap.add_argument("--json", default=os.path.join(REPO, "gdsl", "bench_results.json"))
+    ap.add_argument("--hard", action="store_true", help="use the harder HARD_TASKS set (cross-type/emit/multi-rule) instead of TASKS")
     args = ap.parse_args()
 
-    tasks = TASKS
+    tasks = HARD_TASKS if args.hard else TASKS
     if args.tasks > 0:
         tasks = tasks[:args.tasks]
     ks = [int(x) for x in args.ks.split(",")]

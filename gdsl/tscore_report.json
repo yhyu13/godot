@@ -1,0 +1,82 @@
+{
+  "ts": "2026-09-03T08:48:17",
+  "score": 100.0,
+  "laws_pass": true,
+  "laws": [
+    [
+      "L1-doctest-all-green",
+      true
+    ],
+    [
+      "L2-coverage-floor>=6",
+      true
+    ],
+    [
+      "L3-valid-rate>=0.75",
+      true
+    ]
+  ],
+  "weights_used": {
+    "C": 0.3,
+    "V": 0.25,
+    "E": 0.25,
+    "Q": 0.2
+  },
+  "subs": {
+    "C": 1.0,
+    "V": 1.0,
+    "E": 1.0,
+    "Q": 1.0
+  },
+  "raw": {
+    "doctest": {
+      "status": "OK",
+      "exit": 0,
+      "test_cases": 105,
+      "passed": 105,
+      "all_pass": true,
+      "assertions": 434,
+      "assertions_passed": 434,
+      "err_quality": {
+        "parser_line": true,
+        "typecheck_symbol": true
+      }
+    },
+    "coverage": {
+      "status": "OK",
+      "passed": 9,
+      "total": 9,
+      "fails": []
+    },
+    "convergence": {
+      "n": 5,
+      "first_try_rate": 1.0,
+      "valid_rate": 1.0,
+      "mean_iters": 1.0,
+      "min_k": 0
+    },
+    "economy": {
+      "grammar_prods": 5,
+      "ontology_syms": 4,
+      "constructs": 9,
+      "covered": 9,
+      "ratio": 1.0,
+      "target": 0.9,
+      "sub": 1.0
+    },
+    "grammar_prods": 5,
+    "mutation": {
+      "caught": 16,
+      "total": 16,
+      "score": 1.0,
+      "gaps": []
+    },
+    "E_mode": "semantic",
+    "semantic_e": {
+      "passed": 8,
+      "total": 8,
+      "status": "OK"
+    }
+  },
+  "note": "convergence at ceiling (>=0.999): easy set saturated, no competitive headroom"
+}

@@ -1,0 +1,46 @@
+{
+  "basic_int": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "float_accel": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "float_emit": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "hard_composite": {
+    "status": "ERR",
+    "err": "Command '['D:\\\\GitRepo-My\\\\godot\\\\.godot-bin\\\\Godot_v4.7-rc3_win64_console.exe', '--editor', '--headless', '--path', 'C:\\\\Users\\\\XINDONG\\\\AppData\\\\Local\\\\Temp\\\\gdslloop_sn4tccgw']' timed out after 240"
+  },
+  "multi_rule_self": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "string_name": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "string_with_rule": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "target_emit": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  },
+  "two_types_cross": {
+    "status": "ALLPASS",
+    "fails": [],
+    "err": ""
+  }
+}

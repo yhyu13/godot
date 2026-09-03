@@ -1,289 +1,96 @@
 [
   {
-    "task": "basic_int",
+    "task": "cross_target_emit",
+    "kind": "hard",
     "k": 0,
     "iterations_to_valid": 1,
     "first_try": true,
     "valid": true,
-    "cost": 0.21373999999999999,
+    "cost": 0.21111,
     "results": [
       {
         "iter": 1,
         "ok": true,
-        "cost": 0.21373999999999999,
-        "ms": 25077,
-        "gsdl": "type Player @extends CharacterBody2D\n    state:\n        hp: int = 3\n    rule TakeDamage by Player:\n        when self.hp > 0\n        then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_uskcddnu\\probe.c"
+        "cost": 0.21111,
+        "ms": 3243,
+        "gsdl": "type Bullet @extends Area2D\n    signals: hit\n    state:\n        damage: int = 1\ntype Enemy @extends CharacterBody2D\n    state:\n        hp: int = 8\nrule Hit by Bullet target Enemy:\n    when target.hp > 0\n    then target.hp -= 1, emit(hit)",
+        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_wkj5bf8y\\probe.c"
       }
     ]
   },
   {
-    "task": "float_accel",
+    "task": "multi_effect_float",
+    "kind": "hard",
     "k": 0,
     "iterations_to_valid": 1,
     "first_try": true,
     "valid": true,
-    "cost": 0.21398,
+    "cost": 0.214675,
     "results": [
       {
         "iter": 1,
         "ok": true,
-        "cost": 0.21398,
-        "ms": 2933,
-        "gsdl": "type Player @extends CharacterBody2D\n    state:\n        speed: float = 300.4\n        hp: int = 3\n    rule Accel by Player:\n        when self.hp > 0\n        then self.speed += 5",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_alezt2im\\probe.c"
+        "cost": 0.214675,
+        "ms": 3300,
+        "gsdl": "type Player @extends CharacterBody2D\n    signals: dash\n    state:\n        hp: int = 3\n        speed: float = 100.0\n    rule Dash by Player:\n        when self.hp > 0\n        then self.speed += 25, emit(dash)",
+        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_u14c5bsn\\probe.c"
       }
     ]
   },
   {
-    "task": "string_name",
+    "task": "string_level",
+    "kind": "hard",
     "k": 0,
     "iterations_to_valid": 1,
     "first_try": true,
     "valid": true,
-    "cost": 0.17656,
+    "cost": 0.216315,
     "results": [
       {
         "iter": 1,
         "ok": true,
-        "cost": 0.17656,
-        "ms": 2757,
-        "gsdl": "type Hero @extends Node2D\n    state:\n        nickname: string = \"hero\"\n        hp: int = 3",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_ndssatoi\\probe.c"
+        "cost": 0.216315,
+        "ms": 3321,
+        "gsdl": "type Hero @extends Node2D\n    signals: leveled\n    state:\n        nname: string = \"hero\"\n        lvl: int = 1\n    rule LevelUp by Hero:\n        when self.lvl < 5\n        then self.lvl += 1, emit(leveled)",
+        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench__dhspst5\\probe.c"
       }
     ]
   },
   {
-    "task": "target_emit",
+    "task": "three_rules_two_types",
+    "kind": "hard",
     "k": 0,
     "iterations_to_valid": 1,
     "first_try": true,
     "valid": true,
-    "cost": 0.19487499999999996,
+    "cost": 0.21938999999999997,
     "results": [
       {
         "iter": 1,
         "ok": true,
-        "cost": 0.19487499999999996,
-        "ms": 3275,
-        "gsdl": "type Bullet @extends Area2D\n    state:\n        damage: int = 1\n\ntype Player @extends CharacterBody2D\n    state:\n        hp: int = 3\n\n    rule OnHit by Bullet target Player:\n        when target.hp > 0\n        then target.hp -= 1, emit(hit)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_42ldq0wf\\probe.c"
+        "cost": 0.21938999999999997,
+        "ms": 4395,
+        "gsdl": "type Player @extends CharacterBody2D\n    signals: jump, hit\n    state:\n        hp: int = 3\n        jumps: int = 0\n    rule Jump by Player:\n        when self.jumps < 2\n        then self.jumps += 1, emit(jump)\n    rule Hit by Player:\n        when self.hp > 0\n        then self.hp -= 1, emit(hit)\n\ntype Enemy @extends Node2D\n    state:\n        hp: int = 5",
+        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_t7p5vnv2\\probe.c"
       }
     ]
   },
   {
-    "task": "multi_rule_self",
+    "task": "bool_guard",
+    "kind": "hard",
     "k": 0,
     "iterations_to_valid": 1,
     "first_try": true,
     "valid": true,
-    "cost": 0.204425,
+    "cost": 0.2183,
     "results": [
       {
         "iter": 1,
         "ok": true,
-        "cost": 0.204425,
-        "ms": 54312,
-        "gsdl": "type Player @extends CharacterBody2D\n    state:\n        hp: int = 10\n    rule Heal by Player:\n        when self.hp < 10\n        then self.hp += 2\n    rule TakeDamage by Player:\n        when self.hp > 5\n        then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_pwpbncyv\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "float_emit",
-    "k": 0,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.21049500000000002,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.21049500000000002,
-        "ms": 2662,
-        "gsdl": "type Player @extends CharacterBody2D\n    state:\n        speed: float = 100.0\n        hp: int = 3\n    rule Dash by Player:\n        when self.hp > 0\n        then self.speed += 25, emit(dash)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_mwxnnf_p\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "string_with_rule",
-    "k": 0,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.18845499999999998,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.18845499999999998,
-        "ms": 24246,
-        "gsdl": "type Hero @extends Node2D\n    state:\n        nickname: string = \"hero\"\n        hp: int = 3\n    rule Hurt by Hero:\n        when self.hp > 0\n        then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_oo9ettsw\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "two_types_cross",
-    "k": 0,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.17873,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.17873,
-        "ms": 3137,
-        "gsdl": "type Bullet @extends Area2D\n    state:\n        damage: int = 1\n    rule Fade by Bullet:\n        when self.damage > 0\n        then self.damage -= 1\n\ntype Player @extends CharacterBody2D\n    state:\n        hp: int = 5\n    rule OnHit by Bullet target Player:\n        when target.hp > 0\n        then target.hp -= 1, emit(hit)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_ehdv8ad5\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "basic_int",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.20987999999999998,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.20987999999999998,
-        "ms": 2758,
-        "gsdl": "type Player @extends CharacterBody2D\nstate:\n    hp: int = 3\n\nrule TakeDamage by Player:\n    when self.hp > 0\n    then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_embxuo8r\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "float_accel",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.177525,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.177525,
-        "ms": 3074,
-        "gsdl": "type Player @extends CharacterBody2D\nstate:\n    speed: float = 300.4\n    hp: int = 3\n\nrule Accel by Player:\n    when self.hp > 0\n    then self.speed += 5",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_428pu1a0\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "string_name",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.192755,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.192755,
-        "ms": 23894,
-        "gsdl": "type Hero @extends Node2D\nstate:\n    nickname: string = \"hero\"\n    hp: int = 3",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_u7kbwjhw\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "target_emit",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.215045,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.215045,
-        "ms": 46446,
-        "gsdl": "type Bullet @extends Area2D\nstate:\n    damage: int = 1\n\ntype Player @extends CharacterBody2D\nstate:\n    hp: int = 3\n\nrule OnHit by Bullet target Player:\n    when target.hp > 0\n    then target.hp -= 1, emit(hit)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_8x5meekf\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "multi_rule_self",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.19326000000000002,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.19326000000000002,
-        "ms": 3751,
-        "gsdl": "type Player @extends CharacterBody2D\nstate:\n    hp: int = 10\n\nrule Heal by Player:\n    when self.hp < 10\n    then self.hp += 2\n\nrule TakeDamage by Player:\n    when self.hp > 5\n    then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_ercy8f9u\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "float_emit",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.20121499999999998,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.20121499999999998,
-        "ms": 46463,
-        "gsdl": "type Player @extends CharacterBody2D\n    state:\n        speed: float = 100.0\n        hp: int = 3\n\n    rule Dash by Player:\n        when self.hp > 0\n        then self.speed += 25, emit(dash)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_ihpyiywo\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "string_with_rule",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.20613499999999998,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.20613499999999998,
-        "ms": 24044,
-        "gsdl": "type Hero @extends Node2D\nstate:\n    nickname: string = \"hero\"\n    hp: int = 3\n\nrule Hurt by Hero:\n    when self.hp > 0\n    then self.hp -= 1",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_z57bhuim\\probe.c"
-      }
-    ]
-  },
-  {
-    "task": "two_types_cross",
-    "k": 1,
-    "iterations_to_valid": 1,
-    "first_try": true,
-    "valid": true,
-    "cost": 0.19411,
-    "results": [
-      {
-        "iter": 1,
-        "ok": true,
-        "cost": 0.19411,
-        "ms": 25131,
-        "gsdl": "type Bullet @extends Area2D\n    state:\n        damage: int = 1\nrule Fade by Bullet:\n    when self.damage > 0\n    then self.damage -= 1\n\ntype Player @extends CharacterBody2D\n    state:\n        hp: int = 5\nrule OnHit by Bullet target Player:\n    when target.hp > 0\n    then target.hp -= 1, emit(hit)",
-        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_49vp37fm\\probe.c"
+        "cost": 0.2183,
+        "ms": 4022,
+        "gsdl": "type Door @extends Node2D\n    state:\n        open: bool = false\n        uses: int = 0\n    rule Open by Door:\n        when self.uses < 3\n        then self.uses += 1",
+        "err": "emitted C:\\Users\\XINDONG\\AppData\\Local\\Temp\\gdslbench_tg3ukre9\\probe.c"
       }
     ]
   }
